@@ -1,8 +1,18 @@
 import axios from 'axios';
 import { config } from '../config/env.js';
 
+export function formatTextForWhatsApp(text: string): string {
+  if (!text) return '';
+
+  return text
+    .replace(/^(?:#{1,6})\s+(.+)$/gm, '*$1*')
+    .replace(/\*\*(.*?)\*\*/g, '*$1*');
+}
+
 export class WhatsAppService {
   public async sendMessage(to: string, text: string): Promise<void> {
+    const formattedText = formatTextForWhatsApp(text);
+
     try {
       await axios.post(
         `https://graph.facebook.com/v20.0/${config.phoneNumberId}/messages`,
@@ -10,7 +20,7 @@ export class WhatsAppService {
           messaging_product: 'whatsapp',
           to,
           type: 'text',
-          text: { body: text },
+          text: { body: formattedText },
         },
         {
           headers: {
