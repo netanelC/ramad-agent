@@ -37,6 +37,18 @@ export interface PersonItem {
   isRiskMeeting: boolean;
 }
 
+export interface MemoryInsightItem {
+  id: string;
+  date: string;
+  domain: string;
+  patternType: string;
+  patternDescription: string;
+  impact: string;
+  mirrorQuestion: string;
+  status: string;
+  lastReviewDate: string;
+}
+
 export interface SheetOperationResult {
   success: boolean;
   message: string;
@@ -252,12 +264,77 @@ export class SheetsService {
     }
   }
 
+  public async getActiveMemoryInsights(): Promise<string> {
+    try {
+      const res = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: config.spreadsheetId,
+        range: 'זיכרון_רמד!A2:I30',
+      });
+
+      const rows = res.data.values || [];
+      const activeInsights: MemoryInsightItem[] = [];
+
+      for (const row of rows) {
+        if (!row || row.length < 3) continue;
+
+        const id = (row[0] || '').toString().trim();
+        const date = (row[1] || '').toString().trim();
+        const domain = (row[2] || '').toString().trim();
+        const patternType = (row[3] || '').toString().trim();
+        const patternDescription = (row[4] || '').toString().trim();
+        const impact = (row[5] || '').toString().trim();
+        const mirrorQuestion = (row[6] || '').toString().trim();
+        const status = (row[7] || '').toString().trim();
+        const lastReviewDate = (row[8] || '').toString().trim();
+
+        if (!id || id === 'מזהה תובנה') continue;
+
+        if (
+          status.includes('פעיל') ||
+          status.includes('דורש מעקב') ||
+          status.includes('בתהליך שיפור')
+        ) {
+          activeInsights.push({
+            id,
+            date,
+            domain,
+            patternType,
+            patternDescription,
+            impact,
+            mirrorQuestion,
+            status,
+            lastReviewDate,
+          });
+        }
+      }
+
+      if (activeInsights.length === 0) {
+        return '';
+      }
+
+      const formattedLines = activeInsights.map((item) => {
+        const weakness = item.impact || item.patternType || 'ללא פירוט נקודת תורפה';
+        return `• [תחום: ${item.domain}] דפוס: "${item.patternDescription}" | נקודת תורפה: ${weakness} | שאלת מראה: ${item.mirrorQuestion}`;
+      });
+
+      return `[דפוסים אישיים, הרגלים ונקודות תורפה שנלמדו על הרמ"ד (מתוך זיכרון_רמד)]\n${formattedLines.join('\n')}`;
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error('Error fetching active memory insights from Google Sheets:', errMsg);
+      return '';
+    }
+  }
+
   public async getSystemContext(): Promise<string> {
-    const [tasksContext, peopleContext] = await Promise.all([
+    const [tasksContext, peopleContext, memoryContext] = await Promise.all([
       this.getLiveTasksContext(),
       this.getPeopleContext(),
+      this.getActiveMemoryInsights(),
     ]);
-    return `${tasksContext}\n\n${peopleContext}`;
+
+    return [tasksContext, peopleContext, memoryContext]
+      .filter((s) => s && s.trim().length > 0)
+      .join('\n\n');
   }
 
   public async closeTask(taskId: string): Promise<SheetOperationResult> {
@@ -329,7 +406,6 @@ export class SheetsService {
       const newLog = `[${todayStr}]: נדחה ל-${newDate}. נימוק: ${reason}`;
       const updatedNotes = currentNotes ? `${currentNotes}\n${newLog}` : newLog;
 
-      // Update תג"ב מעודכן (Column F)
       await this.sheets.spreadsheets.values.update({
         spreadsheetId: config.spreadsheetId,
         range: `משימות_ותגב!F${sheetRow}`,
@@ -337,7 +413,6 @@ export class SheetsService {
         requestBody: { values: [[newDate]] },
       });
 
-      // Update מונה דחיות (Column G)
       await this.sheets.spreadsheets.values.update({
         spreadsheetId: config.spreadsheetId,
         range: `משימות_ותגב!G${sheetRow}`,
@@ -345,7 +420,6 @@ export class SheetsService {
         requestBody: { values: [[newRejections]] },
       });
 
-      // Update הערות וסיבת דחייה (Column N)
       await this.sheets.spreadsheets.values.update({
         spreadsheetId: config.spreadsheetId,
         range: `משימות_ותגב!N${sheetRow}`,
@@ -395,7 +469,6 @@ export class SheetsService {
         formattedPriority = 'P3 - שגרתי';
       }
 
-      // Update עדיפות (Column H)
       await this.sheets.spreadsheets.values.update({
         spreadsheetId: config.spreadsheetId,
         range: `משימות_ותגב!H${sheetRow}`,

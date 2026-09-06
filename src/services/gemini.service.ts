@@ -1,4 +1,6 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import fs from 'fs';
+import path from 'path';
 import { config } from '../config/env.js';
 import { sheetsService } from './sheets.service.js';
 
@@ -13,9 +15,22 @@ export interface AgentResponseResult {
   functionCalls?: GeminiFunctionCall[];
 }
 
+function loadDoctrineContent(): string {
+  try {
+    const doctrinePath = path.resolve(process.cwd(), 'doctrine.md');
+    if (fs.existsSync(doctrinePath)) {
+      return fs.readFileSync(doctrinePath, 'utf-8');
+    }
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.warn('Could not read doctrine.md file:', errMsg);
+  }
+  return '';
+}
+
 export class GeminiService {
   private ai: GoogleGenAI;
-  private fallbackModels: string[] = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.1-pro'];
+  private fallbackModels: string[] = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 
   constructor() {
     this.ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
@@ -51,7 +66,6 @@ export class GeminiService {
           throw error;
         }
 
-        // Wait 500ms before retrying with fallback model
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
@@ -64,6 +78,11 @@ export class GeminiService {
     liveSystemContext?: string
   ): Promise<AgentResponseResult> {
     const context = liveSystemContext ?? (await sheetsService.getSystemContext());
+    const doctrineText = loadDoctrineContent();
+
+    const doctrineSection = doctrineText
+      ? `[עקרונות התפיסה הפיקודית של הרמ"ד (מתוך doctrine.md)]\n${doctrineText}`
+      : '[עקרונות התפיסה הפיקודית של הרמ"ד (מתוך doctrine.md)]:\n(מסמך התפיסה הפיקודית לא נמצא, פועל לפי הנחיות ברירת מחדל).';
 
     const response = await this.executeGenerateContent({
       config: {
@@ -71,10 +90,14 @@ export class GeminiService {
 אתה סוכן ניהול וביקורת אישי של רמ"ד במדור טכנולוגי-מבצעי (5 צוותים: טטריס, קסבה, טקסס, ברוקלין, ארמורי).
 אתה שותף ביקורתי, אסרטיבי וחד – לא יס-מן.
 
+תפקידך לשמש כמראה פיקודית המבוססת על עקרונות ה-doctrine.md של הרמ"ד. בכל המלצה, תעדוף או ביקורת – שפוט את המצב דרך עקרונות הדוקטרינה שלו, ושים לב במיוחד לנקודות התורפה וההרגלים המעכבים הידועים עליו מתוך גיליון הזיכרון (כגון מריחת משימות בירוקרטיה או התחמקות משיחות 1-על-1).
+
+${doctrineSection}
+
 ${context}
 
 כללים לפעולה ומענה:
-1. מענה על משימות ואנשים: כשהרמ"ד שואל על משימות, תעדוף, אנשים בסיכון, שחרורים או מפגשי סטטוס – ענה תמיד בהתבסס אך ורק על הנתונים החיים מתוך הגיליונות שלמעלה.
+1. מענה על משימות ואנשים: כשהרמ"ד שואל על משימות, תעדוף, אנשים בסיכון, שחרורים או מפגשי סטטוס – ענה תמיד בהתבסס אך ורק על הנתונים החיים מתוך הגיליונות שלמעלה ועקרונות ה-doctrine.md.
    - סדר מענה חובה: ראשית משימות P1 וחריגות תג"ב, שנית משימות קשב עמוק, ולבסוף משימות P2/P3.
    - התייחסות לאנשים: הדגש משרתים בסיכון שחרור קרוב (<6 חודשים) שטרם החלו חפיפה ומפגשים שחורגים מהיעד.
 2. עדכון משימות וכלים (Function Calling / Tool Use):
