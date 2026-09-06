@@ -49,6 +49,11 @@ export interface MemoryInsightItem {
   lastReviewDate: string;
 }
 
+export interface DraftItem {
+  id: string;
+  text: string;
+}
+
 export interface SheetOperationResult {
   success: boolean;
   message: string;
@@ -337,7 +342,7 @@ export class SheetsService {
       .join('\n\n');
   }
 
-  public async closeTask(taskId: string): Promise<SheetOperationResult> {
+  public async closeTask(taskId: string): Promise<string> {
     try {
       const res = await this.sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
@@ -354,7 +359,7 @@ export class SheetsService {
       });
 
       if (rowIndex === -1) {
-        return { success: false, message: `משימה במזהה "${taskId}" לא נמצאה בגיליון.` };
+        return `משימה במזהה "${taskId}" לא נמצאה בגיליון משימות_ותגב.`;
       }
 
       const sheetRow = rowIndex + 2;
@@ -368,15 +373,15 @@ export class SheetsService {
         },
       });
 
-      return { success: true, message: `משימה ${taskId} סומנה כ"הושלם" בגיליון.` };
+      return `משימה ${taskId} סומנה כ"הושלם" בגיליון משימות_ותגב.`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error(`Error closing task ${taskId}:`, errMsg);
-      return { success: false, message: `שגיאה בסגירת משימה ${taskId}: ${errMsg}` };
+      return `שגיאה בסגירת משימה ${taskId}: ${errMsg}`;
     }
   }
 
-  public async postponeTask(taskId: string, newDate: string, reason: string): Promise<SheetOperationResult> {
+  public async postponeTask(taskId: string, newDate: string, reason: string): Promise<string> {
     try {
       const res = await this.sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
@@ -393,7 +398,7 @@ export class SheetsService {
       });
 
       if (rowIndex === -1) {
-        return { success: false, message: `משימה במזהה "${taskId}" לא נמצאה בגיליון.` };
+        return `משימה במזהה "${taskId}" לא נמצאה בגיליון משימות_ותגב.`;
       }
 
       const sheetRow = rowIndex + 2;
@@ -427,18 +432,18 @@ export class SheetsService {
         requestBody: { values: [[updatedNotes]] },
       });
 
-      return {
-        success: true,
-        message: `תג"ב משימה ${taskId} עודכן ל-${newDate}. מונה דחיות: ${newRejections}. נימוק: ${reason}`,
-      };
+      return `תג"ב משימה ${taskId} עודכן ל-${newDate}. מונה דחיות: ${newRejections}. נימוק: ${reason}.`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error(`Error postponing task ${taskId}:`, errMsg);
-      return { success: false, message: `שגיאה בדחיית משימה ${taskId}: ${errMsg}` };
+      return `שגיאה בדחיית משימה ${taskId}: ${errMsg}`;
     }
   }
 
-  public async updateTaskPriority(taskId: string, newPriority: string): Promise<SheetOperationResult> {
+  public async updateTaskPriority(
+    taskId: string,
+    newPriority: 'P1' | 'P2' | 'P3' | string
+  ): Promise<string> {
     try {
       const res = await this.sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
@@ -455,17 +460,17 @@ export class SheetsService {
       });
 
       if (rowIndex === -1) {
-        return { success: false, message: `משימה במזהה "${taskId}" לא נמצאה בגיליון.` };
+        return `משימה במזהה "${taskId}" לא נמצאה בגיליון משימות_ותגב.`;
       }
 
       const sheetRow = rowIndex + 2;
       let formattedPriority = newPriority;
 
-      if (newPriority.toUpperCase() === 'P1') {
+      if (newPriority.toUpperCase().startsWith('P1')) {
         formattedPriority = 'P1 - קריטי/צוואר בקבוק';
-      } else if (newPriority.toUpperCase() === 'P2') {
+      } else if (newPriority.toUpperCase().startsWith('P2')) {
         formattedPriority = 'P2 - חשוב/דחוף';
-      } else if (newPriority.toUpperCase() === 'P3') {
+      } else if (newPriority.toUpperCase().startsWith('P3')) {
         formattedPriority = 'P3 - שגרתי';
       }
 
@@ -476,11 +481,140 @@ export class SheetsService {
         requestBody: { values: [[formattedPriority]] },
       });
 
-      return { success: true, message: `עדיפות משימה ${taskId} עודכנה ל-${formattedPriority}.` };
+      return `עדיפות משימה ${taskId} עודכנה ל-${formattedPriority}.`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error(`Error updating priority for task ${taskId}:`, errMsg);
-      return { success: false, message: `שגיאה בעדכון עדיפות משימה ${taskId}: ${errMsg}` };
+      return `שגיאה בעדכון עדיפות משימה ${taskId}: ${errMsg}`;
+    }
+  }
+
+  public async getPendingDrafts(): Promise<DraftItem[]> {
+    try {
+      const res = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: config.spreadsheetId,
+        range: 'אינבוקס_טיוטות!A2:F50',
+      });
+
+      const rows = res.data.values || [];
+      const drafts: DraftItem[] = [];
+
+      for (const row of rows) {
+        if (!row || row.length < 2) continue;
+        const id = (row[0] || '').toString().trim();
+        const text = (row[1] || '').toString().trim();
+        const status = (row[5] || '').toString().trim();
+
+        if (!id || id === 'מזהה טיוטה') continue;
+
+        if (status === 'ממתין לאפייה') {
+          drafts.push({ id, text });
+        }
+      }
+
+      return drafts;
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error('Error fetching pending drafts from Google Sheets:', errMsg);
+      return [];
+    }
+  }
+
+  public async bakeDraft(
+    draftId: string,
+    taskTitle: string,
+    team: string,
+    tgb: string,
+    priority: string
+  ): Promise<string> {
+    try {
+      // 1. Get existing tasks to find next available task ID
+      const tasksRes = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: config.spreadsheetId,
+        range: 'משימות_ותגב!A2:N50',
+      });
+
+      const taskRows = tasksRes.data.values || [];
+      let maxId = 0;
+
+      for (const r of taskRows) {
+        if (!r || !r[0]) continue;
+        const num = parseInt(r[0].toString().replace(/\D/g, ''), 10);
+        if (!isNaN(num) && num > maxId) {
+          maxId = num;
+        }
+      }
+
+      const nextTaskId = maxId > 0 ? (maxId + 1).toString() : '18';
+      const todayDate = new Date().toISOString().slice(0, 10);
+
+      let formattedPriority = priority;
+      if (priority.toUpperCase().startsWith('P1')) {
+        formattedPriority = 'P1 - קריטי/צוואר בקבוק';
+      } else if (priority.toUpperCase().startsWith('P2')) {
+        formattedPriority = 'P2 - חשוב/דחוף';
+      } else if (priority.toUpperCase().startsWith('P3')) {
+        formattedPriority = 'P3 - שגרתי';
+      }
+
+      // 2. Append new task row to משימות_ותגב
+      await this.sheets.spreadsheets.values.append({
+        spreadsheetId: config.spreadsheetId,
+        range: 'משימות_ותגב!A:N',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: [
+            [
+              nextTaskId,
+              taskTitle,
+              team,
+              '',
+              tgb,
+              '',
+              '0',
+              formattedPriority,
+              'קשב בינוני [שעה-שעתיים]',
+              'טרם החל',
+              todayDate,
+              '0',
+              'פתוח',
+              `אפוי מאינבוקס טיוטות (${draftId})`,
+            ],
+          ],
+        },
+      });
+
+      // 3. Update draft status in אינבוקס_טיוטות
+      const draftsRes = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: config.spreadsheetId,
+        range: 'אינבוקס_טיוטות!A2:F50',
+      });
+
+      const draftRows = draftsRes.data.values || [];
+      const cleanDraftId = draftId.trim().toLowerCase();
+
+      const draftRowIndex = draftRows.findIndex((r) => {
+        if (!r || !r[0]) return false;
+        return r[0].toString().trim().toLowerCase() === cleanDraftId;
+      });
+
+      if (draftRowIndex !== -1) {
+        const sheetRow = draftRowIndex + 2;
+        await this.sheets.spreadsheets.values.update({
+          spreadsheetId: config.spreadsheetId,
+          range: `אינבוקס_טיוטות!F${sheetRow}`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: {
+            values: [['הועבר לגיליון משימות']],
+          },
+        });
+      }
+
+      return `טיוטה ${draftId} נאפתה בהצלחה למשימה חדשה [מזהה ${nextTaskId}] ("${taskTitle}") בגיליון משימות_ותגב.`;
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error(`Error baking draft ${draftId}:`, errMsg);
+      return `שגיאה באפיית טיוטה ${draftId}: ${errMsg}`;
     }
   }
 

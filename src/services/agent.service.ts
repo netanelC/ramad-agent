@@ -13,7 +13,7 @@ export class AgentService {
     console.log(`Received message: "${text}" from ${from}`);
 
     try {
-      // 1. Fetch combined live context (Tasks + People)
+      // 1. Fetch combined live context (Tasks + People + Memory)
       const systemContext = await sheetsService.getSystemContext();
 
       // 2. Generate response or tool call requests from Gemini
@@ -22,23 +22,35 @@ export class AgentService {
       // 3. Check if Gemini requested Function Calls (Tools)
       if (agentResult.functionCalls && agentResult.functionCalls.length > 0) {
         for (const call of agentResult.functionCalls) {
-          let toolResult: SheetOperationResult;
+          let messageResult: string;
 
           if (call.name === 'close_task') {
             const taskId = String(call.args.taskId || '');
-            toolResult = await sheetsService.closeTask(taskId);
+            messageResult = await sheetsService.closeTask(taskId);
           } else if (call.name === 'postpone_task') {
             const taskId = String(call.args.taskId || '');
             const newDate = String(call.args.newDate || '');
             const reason = String(call.args.reason || '');
-            toolResult = await sheetsService.postponeTask(taskId, newDate, reason);
+            messageResult = await sheetsService.postponeTask(taskId, newDate, reason);
           } else if (call.name === 'update_task_priority') {
             const taskId = String(call.args.taskId || '');
             const newPriority = String(call.args.newPriority || '');
-            toolResult = await sheetsService.updateTaskPriority(taskId, newPriority);
+            messageResult = await sheetsService.updateTaskPriority(taskId, newPriority);
+          } else if (call.name === 'bake_draft') {
+            const draftId = String(call.args.draftId || '');
+            const taskTitle = String(call.args.taskTitle || '');
+            const team = String(call.args.team || '');
+            const tgb = String(call.args.tgb || '');
+            const priority = String(call.args.priority || '');
+            messageResult = await sheetsService.bakeDraft(draftId, taskTitle, team, tgb, priority);
           } else {
-            toolResult = { success: false, message: `פונקציה אינה מוכרת: ${call.name}` };
+            messageResult = `שגיאה: פונקציה אינה מוכרת (${call.name}).`;
           }
+
+          const toolResult: SheetOperationResult = {
+            success: !messageResult.startsWith('שגיאה'),
+            message: messageResult,
+          };
 
           // Generate confirmation response from Gemini with function result
           const confirmationReply = await geminiService.sendFunctionResponse(

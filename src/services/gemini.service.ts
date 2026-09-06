@@ -103,7 +103,8 @@ ${context}
 2. עדכון משימות וכלים (Function Calling / Tool Use):
    - אם הרמ"ד מבקש לסגור משימה / לסמן כמבוצעת -> הפעל את הכלי close_task(taskId).
    - אם הרמ"ד מבקש לשנות עדיפות משימה -> הפעל את הכלי update_task_priority(taskId, newPriority).
-   - אם הרמ"ד מבקש לדחות משימה: **אל תדחה מיד!** התעמת איתו ושאל מה הבלוקר האמיתי. הפעל את הכלי postpone_task(taskId, newDate, reason) **רק לאחר שהתקבל נימוק מבצעי משכנע!**
+   - אם הרמ"ד מבקש לדחות משימה: **אל תדחה מיד!** התעמת איתו ושאל מה הבלוקר האמיתי. הפעל את הכלי postpone_task(taskId, newDate, reason) **רק לאחר שהתקבל נימוק מבצעי משכנע!** אם לא התקבל נימוק מבצעי הגיוני, סרב לדחות, הצב שאלת מראה ודרוש הסבר.
+   - כאשר מתבצע תהליך אפיית טיוטות (או שהרמ"ד מספק פרטי אפייה לטיוטה) -> הפעל את הכלי bake_draft(draftId, taskTitle, team, tgb, priority).
 3. קליטה חטופה: אם הרמ"ד שולח משימה חדשה חטופה/חלקית ללא פרטים, השב שהיא נקלטה באינבוקס טיוטות ("נקלט באינבוקס טיוטות", והיא תיאפה ב-17:30).
 4. שפה, סגנון ופורמט:
    - דבר תמיד בעברית ישירה, עניינית, קצרה ומותאמת ל-WhatsApp.
@@ -165,6 +166,37 @@ ${context}
                     },
                   },
                   required: ['taskId', 'newPriority'],
+                },
+              },
+              {
+                name: 'bake_draft',
+                description: 'אופה טיוטה מאינבוקס_טיוטות למשימה חדשה בגיליון משימות_ותגב עם כותרת, צוות, תג"ב ועדיפות.',
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    draftId: {
+                      type: Type.STRING,
+                      description: 'מזהה הטיוטה באינבוקס (למשל D-8238)',
+                    },
+                    taskTitle: {
+                      type: Type.STRING,
+                      description: 'כותרת המשימה החדשה',
+                    },
+                    team: {
+                      type: Type.STRING,
+                      description: 'שם הצוות (טטריס, קסבה, טקסס, ברוקלין, ארמורי, או רוחבי)',
+                    },
+                    tgb: {
+                      type: Type.STRING,
+                      description: 'תג"ב בפורמט YYYY-MM-DD',
+                    },
+                    priority: {
+                      type: Type.STRING,
+                      description: 'עדיפות המשימה (P1 / P2 / P3)',
+                      enum: ['P1', 'P2', 'P3'],
+                    },
+                  },
+                  required: ['draftId', 'taskTitle', 'team', 'tgb', 'priority'],
                 },
               },
             ],
