@@ -30,7 +30,7 @@ function loadDoctrineContent(): string {
 
 export class GeminiService {
   private ai: GoogleGenAI;
-  private fallbackModels: string[] = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+  private fallbackModels: string[] = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.1-pro'];
 
   constructor() {
     this.ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
