@@ -15,9 +15,48 @@ export interface AgentResponseResult {
 
 export class GeminiService {
   private ai: GoogleGenAI;
+  private fallbackModels: string[] = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 
   constructor() {
     this.ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
+  }
+
+  private async executeGenerateContent(options: Record<string, any>): Promise<any> {
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < this.fallbackModels.length; attempt++) {
+      const modelName = this.fallbackModels[attempt] || 'gemini-3.6-flash';
+      try {
+        const response = await this.ai.models.generateContent({
+          ...(options as any),
+          model: modelName,
+        });
+        return response;
+      } catch (error: unknown) {
+        lastError = error;
+        const errMsg = error instanceof Error ? error.message : String(error);
+        const isTransientError =
+          errMsg.includes('503') ||
+          errMsg.includes('UNAVAILABLE') ||
+          errMsg.includes('high demand') ||
+          errMsg.includes('temporarily unavailable') ||
+          errMsg.includes('429') ||
+          errMsg.includes('RESOURCE_EXHAUSTED');
+
+        console.warn(
+          `Gemini API call with model '${modelName}' failed (attempt ${attempt + 1}/${this.fallbackModels.length}, transient: ${isTransientError}): ${errMsg}`
+        );
+
+        if (!isTransientError) {
+          throw error;
+        }
+
+        // Wait 500ms before retrying with fallback model
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+
+    throw lastError;
   }
 
   public async generateAgentResponse(
@@ -26,8 +65,7 @@ export class GeminiService {
   ): Promise<AgentResponseResult> {
     const context = liveSystemContext ?? (await sheetsService.getSystemContext());
 
-    const response = await this.ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+    const response = await this.executeGenerateContent({
       config: {
         systemInstruction: `
 אתה סוכן ניהול וביקורת אישי של רמ"ד במדור טכנולוגי-מבצעי (5 צוותים: טטריס, קסבה, טקסס, ברוקלין, ארמורי).
@@ -164,8 +202,7 @@ ${context}
       },
     ];
 
-    const response = await this.ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+    const response = await this.executeGenerateContent({
       config: {
         systemInstruction: `
 אתה סוכן ניהול וביקורת אישי של רמ"ד.
