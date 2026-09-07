@@ -1,10 +1,12 @@
 import { whatsAppService } from './whatsapp.service.js';
 import { geminiService } from './gemini.service.js';
-import { sheetsService, type SheetOperationResult } from './sheets.service.js';
+import { sheetsService } from './sheets.service.js';
 import { config } from '../config/env.js';
 
 export class AgentService {
   public async processIncomingMessage(from: string, text: string): Promise<void> {
+    const targetRecipient = from || config.allowedPhoneNumber;
+
     if (from !== config.allowedPhoneNumber) {
       console.warn(`Blocked message from unauthorized number: ${from}`);
       return;
@@ -21,6 +23,8 @@ export class AgentService {
 
       // 3. Check if Gemini requested Function Calls (Tools)
       if (agentResult.functionCalls && agentResult.functionCalls.length > 0) {
+        const toolResults: string[] = [];
+
         for (const call of agentResult.functionCalls) {
           let messageResult: string;
 
@@ -47,36 +51,34 @@ export class AgentService {
             messageResult = `שגיאה: פונקציה אינה מוכרת (${call.name}).`;
           }
 
-          const toolResult: SheetOperationResult = {
-            success: !messageResult.startsWith('שגיאה'),
-            message: messageResult,
-          };
-
-          // Generate confirmation response from Gemini with function result
-          const confirmationReply = await geminiService.sendFunctionResponse(
-            text,
-            call.name,
-            call.args,
-            toolResult,
-            systemContext
-          );
-
-          await whatsAppService.sendMessage(from, confirmationReply);
+          toolResults.push(messageResult);
         }
+
+        // Direct Confirmation response without extra API roundtrip
+        const bullets = toolResults.map((r) => `• ${r}`).join('\n');
+        const extraText = agentResult.text && agentResult.text.trim() ? `\n\n${agentResult.text.trim()}` : '';
+        const confirmationMessage = `*בוצע. הפעולות הבאות עודכנו בגיליון:*\n${bullets}${extraText}`;
+
+        await whatsAppService.sendMessage(targetRecipient, confirmationMessage);
       } else {
         // Direct text response from Gemini
         const reply = agentResult.text || 'נקלט.';
-        await whatsAppService.sendMessage(from, reply);
+        await whatsAppService.sendMessage(targetRecipient, reply);
 
         if (reply.includes('אינבוקס טיוטות') || text.startsWith('משימה:')) {
           await sheetsService.appendDraftTask(text);
         }
       }
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        console.error('Error in agent message processing:', err.message);
-      } else {
-        console.error('Error in agent message processing:', err);
+      const errorDetails = err instanceof Error ? err.message : String(err);
+      console.error('Error in agent message processing:', errorDetails);
+
+      // Always notify user on WhatsApp of error so they are never left hanging
+      const errorMessage = `⚠️ נתקלתי בשגיאה בעיבוד הבקשה שלך. הפעולה לא הושלמה. פרטים: ${errorDetails || 'שגיאה לא צפויה'}`;
+      try {
+        await whatsAppService.sendMessage(targetRecipient, errorMessage);
+      } catch (sendErr: unknown) {
+        console.error('Failed to send error notification via WhatsApp:', sendErr);
       }
     }
   }

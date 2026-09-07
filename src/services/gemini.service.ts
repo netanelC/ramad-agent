@@ -30,7 +30,7 @@ function loadDoctrineContent(): string {
 
 export class GeminiService {
   private ai: GoogleGenAI;
-  private fallbackModels: string[] = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.1-pro-preview'];
+  private fallbackModels: string[] = ['gemini-3.7-flash', 'gemini-3.6-flash'];
 
   constructor() {
     this.ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
@@ -40,7 +40,7 @@ export class GeminiService {
     let lastError: unknown;
 
     for (let attempt = 0; attempt < this.fallbackModels.length; attempt++) {
-      const modelName = this.fallbackModels[attempt] || 'gemini-3.6-flash';
+      const modelName = this.fallbackModels[attempt] || 'gemini-3.7-flash';
       try {
         const response = await this.ai.models.generateContent({
           ...(options as any),
@@ -86,6 +86,7 @@ export class GeminiService {
 
     const response = await this.executeGenerateContent({
       config: {
+        thinkingConfig: { thinkingBudget: 0 },
         systemInstruction: `
 אתה סוכן ניהול וביקורת אישי של רמ"ד במדור טכנולוגי-מבצעי (5 צוותים: טטריס, קסבה, טקסס, ברוקלין, ארמורי).
 אתה שותף ביקורתי, אסרטיבי וחד – לא יס-מן.
@@ -101,7 +102,7 @@ ${context}
    - סדר מענה חובה: ראשית משימות P1 וחריגות תג"ב, שנית משימות קשב עמוק, ולבסוף משימות P2/P3.
    - התייחסות לאנשים: הדגש משרתים בסיכון שחרור קרוב (<6 חודשים) שטרם החלו חפיפה ומפגשים שחורגים מהיעד.
 2. עדכון משימות וכלים (Function Calling / Tool Use):
-   - אם הרמ"ד מבקש לסגור משימה / לסמן כמבוצעת -> הפעל את הכלי close_task(taskId).
+   - אם הרמ"ד מבקש לסגור משימה / לסמן כמבוצעת (גם עבור מספר משימות במקביל) -> הפעל את הכלי close_task(taskId) לכל משימה.
    - אם הרמ"ד מבקש לשנות עדיפות משימה -> הפעל את הכלי update_task_priority(taskId, newPriority).
    - אם הרמ"ד מבקש לדחות משימה: **אל תדחה מיד!** התעמת איתו ושאל מה הבלוקר האמיתי. הפעל את הכלי postpone_task(taskId, newDate, reason) **רק לאחר שהתקבל נימוק מבצעי משכנע!** אם לא התקבל נימוק מבצעי הגיוני, סרב לדחות, הצב שאלת מראה ודרוש הסבר.
    - כאשר מתבצע תהליך אפיית טיוטות (או שהרמ"ד מספק פרטי אפייה לטיוטה) -> הפעל את הכלי bake_draft(draftId, taskTitle, team, tgb, priority).
@@ -222,54 +223,6 @@ ${context}
     }
 
     return result;
-  }
-
-  public async sendFunctionResponse(
-    userText: string,
-    functionName: string,
-    functionArgs: Record<string, any>,
-    functionResult: { success: boolean; message: string },
-    liveSystemContext?: string
-  ): Promise<string> {
-    const contents = [
-      { role: 'user', parts: [{ text: userText }] },
-      {
-        role: 'model',
-        parts: [
-          {
-            functionCall: {
-              name: functionName,
-              args: functionArgs,
-            },
-          },
-        ],
-      },
-      {
-        role: 'user',
-        parts: [
-          {
-            functionResponse: {
-              name: functionName,
-              response: functionResult,
-            },
-          },
-        ],
-      },
-    ];
-
-    const response = await this.executeGenerateContent({
-      config: {
-        systemInstruction: `
-אתה סוכן ניהול וביקורת אישי של רמ"ד.
-אישור ביצוע עדכון בגיליון: ${functionResult.message}
-
-השב בקצרה, בעברית ישירה וחדה המותאמת ל-WhatsApp, המאשרת שהעדכון בוצע בגיליון. השתמש בהדגשות כוכבית יחידה (*טקסט*).
-`,
-      },
-      contents,
-    });
-
-    return response.text || functionResult.message;
   }
 }
 

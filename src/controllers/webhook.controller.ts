@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { config } from '../config/env.js';
 import { agentService } from '../services/agent.service.js';
+import { whatsAppService } from '../services/whatsapp.service.js';
 import type { WhatsAppWebhookPayload } from '../types/whatsapp.js';
 
 export class WebhookController {
@@ -33,7 +34,19 @@ export class WebhookController {
     const from = message.from;
     const text = message.text.body.trim();
 
-    await agentService.processIncomingMessage(from, text);
+    try {
+      await agentService.processIncomingMessage(from, text);
+    } catch (err: unknown) {
+      const errorDetails = err instanceof Error ? err.message : String(err);
+      console.error('Unhandled error in Webhook Controller:', errorDetails);
+
+      const errorMessage = `⚠️ נתקלתי בשגיאה בעיבוד הבקשה שלך. הפעולה לא הושלמה. פרטים: ${errorDetails || 'שגיאה לא צפויה'}`;
+      try {
+        await whatsAppService.sendMessage(from || config.allowedPhoneNumber, errorMessage);
+      } catch (sendErr: unknown) {
+        console.error('Failed to send error notification via WhatsApp from controller:', sendErr);
+      }
+    }
   }
 }
 
