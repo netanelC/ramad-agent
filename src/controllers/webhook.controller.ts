@@ -4,6 +4,8 @@ import { agentService } from '../services/agent.service.js';
 import { whatsAppService } from '../services/whatsapp.service.js';
 import type { WhatsAppWebhookPayload } from '../types/whatsapp.js';
 
+const processedMessageIds = new Set<string>();
+
 export class WebhookController {
   public verifyWebhook(req: Request, res: Response): void {
     const mode = req.query['hub.mode'];
@@ -34,6 +36,15 @@ export class WebhookController {
     const from = message.from;
     const messageId = message.id;
     const text = message.text.body.trim();
+
+    if (processedMessageIds.has(messageId)) {
+      console.log(`Duplicate message ignored: ${messageId}`);
+      return;
+    }
+    processedMessageIds.add(messageId);
+
+    // ניקוי המזהה אחרי 5 דקות כדי למנוע צמיחה בזיכרון
+    setTimeout(() => processedMessageIds.delete(messageId), 5 * 60 * 1000);
 
     // 1. Immediate reaction emoji ⏳ to signal request is received & processing
     if (messageId) {
