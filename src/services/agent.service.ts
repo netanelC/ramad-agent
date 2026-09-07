@@ -47,6 +47,19 @@ export class AgentService {
             const tgb = String(call.args.tgb || '');
             const priority = String(call.args.priority || '');
             messageResult = await sheetsService.bakeDraft(draftId, taskTitle, team, tgb, priority);
+          } else if (call.name === 'save_memory_insight') {
+            const domain = String(call.args.domain || '');
+            const patternType = String(call.args.patternType || '');
+            const description = String(call.args.description || '');
+            const impact = String(call.args.impact || '');
+            const recommendation = String(call.args.recommendation || '');
+            messageResult = await sheetsService.saveMemoryInsight({
+              domain,
+              patternType,
+              description,
+              impact,
+              recommendation,
+            });
           } else {
             messageResult = `שגיאה: פונקציה אינה מוכרת (${call.name}).`;
           }

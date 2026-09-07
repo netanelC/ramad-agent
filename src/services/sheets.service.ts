@@ -70,6 +70,61 @@ export class SheetsService {
     this.sheets = google.sheets({ version: 'v4', auth });
   }
 
+  private async ensureArchiveSheetExists(): Promise<void> {
+    try {
+      const res = await this.sheets.spreadsheets.get({
+        spreadsheetId: config.spreadsheetId,
+      });
+
+      const exists = res.data.sheets?.some(
+        (s) => s.properties?.title === 'ארכיון_משימות'
+      );
+
+      if (!exists) {
+        await this.sheets.spreadsheets.batchUpdate({
+          spreadsheetId: config.spreadsheetId,
+          requestBody: {
+            requests: [
+              {
+                addSheet: {
+                  properties: { title: 'ארכיון_משימות' },
+                },
+              },
+            ],
+          },
+        });
+
+        await this.sheets.spreadsheets.values.update({
+          spreadsheetId: config.spreadsheetId,
+          range: 'ארכיון_משימות!A1:N1',
+          valueInputOption: 'USER_ENTERED',
+          requestBody: {
+            values: [
+              [
+                'מזהה משימה',
+                'משימה',
+                'צוות',
+                'אנשי קשר וגורמי חוץ',
+                'תג"ב מקורי',
+                'תג"ב מעודכן',
+                'מונה דחיות',
+                'עדיפות',
+                'רמת קשב וזמן עבודה',
+                'שלב עבודה',
+                'תאריך פתיחה',
+                'ימים פתוחה',
+                'סטטוס',
+                'הערות ותאריך סגירה',
+              ],
+            ],
+          },
+        });
+      }
+    } catch (err: unknown) {
+      console.error('Error ensuring archive sheet tab exists:', err);
+    }
+  }
+
   public async getLiveTasksContext(): Promise<string> {
     try {
       const res = await this.sheets.spreadsheets.values.get({
@@ -159,6 +214,46 @@ export class SheetsService {
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error('Error fetching live tasks context from Google Sheets:', errMsg);
       return '[תמונת מצב חיה מתוך גיליון משימות_ותגב]: לא ניתן לשלוק משימות מ-Google Sheets כעת בשל שגיאה.';
+    }
+  }
+
+  public async getArchivedTasksContext(): Promise<string> {
+    try {
+      await this.ensureArchiveSheetExists();
+      const res = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: config.spreadsheetId,
+        range: 'ארכיון_משימות!A2:N50',
+      });
+
+      const rows = res.data.values || [];
+      const archived: Array<{ id: string; name: string; team: string; notes: string }> = [];
+
+      for (const row of rows) {
+        if (!row || row.length < 2) continue;
+        const id = (row[0] || '').toString().trim();
+        const name = (row[1] || '').toString().trim();
+        if (!id || id === 'מזהה משימה') continue;
+
+        archived.push({
+          id,
+          name,
+          team: (row[2] || '').toString().trim(),
+          notes: (row[13] || '').toString().trim(),
+        });
+      }
+
+      if (archived.length === 0) {
+        return '[ארכיון משימות שהושלמו (מתוך ארכיון_משימות)]: אין כרגע משימות בארכיון.';
+      }
+
+      const lines = archived.map(
+        (a) => `• [מזהה ${a.id}] "${a.name}" | צוות: ${a.team} | ${a.notes}`
+      );
+      return `[ארכיון משימות שהושלמו (מתוך ארכיון_משימות)]\nנמצאו ${archived.length} משימות שהושלמו:\n${lines.join('\n')}`;
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error('Error fetching archived tasks context from Google Sheets:', errMsg);
+      return '';
     }
   }
 
@@ -273,7 +368,7 @@ export class SheetsService {
     try {
       const res = await this.sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
-        range: 'זיכרון_רמד!A2:I30',
+        range: 'זיכרון_רמד!A2:I50',
       });
 
       const rows = res.data.values || [];
@@ -331,19 +426,22 @@ export class SheetsService {
   }
 
   public async getSystemContext(): Promise<string> {
-    const [tasksContext, peopleContext, memoryContext] = await Promise.all([
+    const [tasksContext, peopleContext, memoryContext, archiveContext] = await Promise.all([
       this.getLiveTasksContext(),
       this.getPeopleContext(),
       this.getActiveMemoryInsights(),
+      this.getArchivedTasksContext(),
     ]);
 
-    return [tasksContext, peopleContext, memoryContext]
+    return [tasksContext, peopleContext, memoryContext, archiveContext]
       .filter((s) => s && s.trim().length > 0)
       .join('\n\n');
   }
 
   public async closeTask(taskId: string): Promise<string> {
     try {
+      await this.ensureArchiveSheetExists();
+
       const res = await this.sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
         range: 'משימות_ותגב!A2:N50',
@@ -363,20 +461,61 @@ export class SheetsService {
       }
 
       const sheetRow = rowIndex + 2;
+      const originalRow = rows[rowIndex] || [];
+      const todayStr = new Date().toISOString().slice(0, 10);
 
-      await this.sheets.spreadsheets.values.update({
+      const archiveRow: string[] = [];
+      for (let i = 0; i < 14; i++) {
+        archiveRow[i] = (originalRow[i] || '').toString().trim();
+      }
+
+      archiveRow[12] = 'הושלם';
+      const currentNotes = archiveRow[13] || '';
+      const closingLog = `[תאריך סגירה: ${todayStr}]`;
+      archiveRow[13] = currentNotes ? `${currentNotes}\n${closingLog}` : closingLog;
+
+      // 1. Copy row to ארכיון_משימות
+      await this.sheets.spreadsheets.values.append({
         spreadsheetId: config.spreadsheetId,
-        range: `משימות_ותגב!M${sheetRow}`,
+        range: 'ארכיון_משימות!A:N',
         valueInputOption: 'USER_ENTERED',
         requestBody: {
-          values: [['הושלם']],
+          values: [archiveRow],
         },
       });
 
-      return `משימה ${taskId} סומנה כ"הושלם" בגיליון משימות_ותגב.`;
+      // 2. Delete row from משימות_ותגב
+      const meta = await this.sheets.spreadsheets.get({
+        spreadsheetId: config.spreadsheetId,
+      });
+
+      const tasksSheet = meta.data.sheets?.find(
+        (s) => s.properties?.title === 'משימות_ותגב'
+      );
+      const tasksSheetId = tasksSheet?.properties?.sheetId ?? 0;
+
+      await this.sheets.spreadsheets.batchUpdate({
+        spreadsheetId: config.spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              deleteDimension: {
+                range: {
+                  sheetId: tasksSheetId,
+                  dimension: 'ROWS',
+                  startIndex: sheetRow - 1,
+                  endIndex: sheetRow,
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      return `משימה ${taskId} ("${archiveRow[1]}") סומנה כ"הושלם" והועברה לגיליון ארכיון_משימות.`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error(`Error closing task ${taskId}:`, errMsg);
+      console.error(`Error closing and archiving task ${taskId}:`, errMsg);
       return `שגיאה בסגירת משימה ${taskId}: ${errMsg}`;
     }
   }
@@ -489,6 +628,62 @@ export class SheetsService {
     }
   }
 
+  public async saveMemoryInsight(insight: {
+    domain: string;
+    patternType: string;
+    description: string;
+    impact: string;
+    recommendation: string;
+  }): Promise<string> {
+    try {
+      const res = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: config.spreadsheetId,
+        range: 'זיכרון_רמד!A2:I50',
+      });
+
+      const rows = res.data.values || [];
+      let maxId = 0;
+
+      for (const r of rows) {
+        if (!r || !r[0]) continue;
+        const num = parseInt(r[0].toString().replace(/\D/g, ''), 10);
+        if (!isNaN(num) && num > maxId) {
+          maxId = num;
+        }
+      }
+
+      const nextId = `INS-${maxId > 0 ? maxId + 1 : rows.length + 1}`;
+      const todayStr = new Date().toISOString().slice(0, 10);
+
+      await this.sheets.spreadsheets.values.append({
+        spreadsheetId: config.spreadsheetId,
+        range: 'זיכרון_רמד!A:I',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: [
+            [
+              nextId,
+              todayStr,
+              insight.domain,
+              insight.patternType,
+              insight.description,
+              insight.impact,
+              insight.recommendation,
+              'פעיל / דורש מעקב',
+              todayStr,
+            ],
+          ],
+        },
+      });
+
+      return `תובנת זיכרון חדשה [${nextId}] נשמרה בגיליון זיכרון_רמד: "${insight.description}".`;
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error('Error saving memory insight:', errMsg);
+      return `שגיאה בשמירת תובנת זיכרון: ${errMsg}`;
+    }
+  }
+
   public async getPendingDrafts(): Promise<DraftItem[]> {
     try {
       const res = await this.sheets.spreadsheets.values.get({
@@ -528,7 +723,6 @@ export class SheetsService {
     priority: string
   ): Promise<string> {
     try {
-      // 1. Get existing tasks to find next available task ID
       const tasksRes = await this.sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
         range: 'משימות_ותגב!A2:N50',
@@ -557,7 +751,6 @@ export class SheetsService {
         formattedPriority = 'P3 - שגרתי';
       }
 
-      // 2. Append new task row to משימות_ותגב
       await this.sheets.spreadsheets.values.append({
         spreadsheetId: config.spreadsheetId,
         range: 'משימות_ותגב!A:N',
@@ -584,7 +777,6 @@ export class SheetsService {
         },
       });
 
-      // 3. Update draft status in אינבוקס_טיוטות
       const draftsRes = await this.sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
         range: 'אינבוקס_טיוטות!A2:F50',
