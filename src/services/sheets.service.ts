@@ -141,9 +141,17 @@ export class SheetsService {
 
         const id = (row[0] || '').toString().trim();
         const name = (row[1] || '').toString().trim();
+        const stage = (row[9] || '').toString().trim();
         const status = (row[12] || '').toString().trim();
 
-        if (!id || id === 'מזהה משימה' || status === 'הושלם') {
+        if (
+          !id ||
+          id === 'מזהה משימה' ||
+          stage === 'הושלם' ||
+          stage === 'מבוטל' ||
+          status === 'הושלם' ||
+          status === 'מבוטל'
+        ) {
           continue;
         }
 
@@ -155,7 +163,6 @@ export class SheetsService {
         const rejections = (row[6] || '0').toString().trim();
         const priority = (row[7] || '').toString().trim();
         const attention = (row[8] || '').toString().trim();
-        const stage = (row[9] || '').toString().trim();
         const openDate = (row[10] || '').toString().trim();
         const daysOpen = (row[11] || '').toString().trim();
         const notes = (row[13] || '').toString().trim();
@@ -469,7 +476,8 @@ export class SheetsService {
         archiveRow[i] = (originalRow[i] || '').toString().trim();
       }
 
-      archiveRow[12] = 'הושלם';
+      archiveRow[9] = 'הושלם'; // שלב עבודה
+      archiveRow[12] = 'הושלם'; // סטטוס
       const currentNotes = archiveRow[13] || '';
       const closingLog = `[תאריך סגירה: ${todayStr}]`;
       archiveRow[13] = currentNotes ? `${currentNotes}\n${closingLog}` : closingLog;
@@ -512,7 +520,7 @@ export class SheetsService {
         },
       });
 
-      return `משימה ${taskId} ("${archiveRow[1]}") סומנה כ"הושלם" והועברה לגיליון ארכיון_משימות.`;
+      return `משימה ${taskId} ("${archiveRow[1]}") שלב עבודה עודכן ל"הושלם", הועברה לגיליון ארכיון_משימות ונמחקה מגיליון משימות_ותגב.`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error(`Error closing and archiving task ${taskId}:`, errMsg);
