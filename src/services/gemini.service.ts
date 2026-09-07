@@ -30,7 +30,7 @@ function loadDoctrineContent(): string {
 
 export class GeminiService {
   private ai: GoogleGenAI;
-  private fallbackModels: string[] = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash'];
+  private fallbackModels: string[] = ['gemini-pro-latest', 'gemini-2.5-pro', 'gemini-2.5-flash'];
 
   constructor() {
     this.ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
@@ -40,7 +40,7 @@ export class GeminiService {
     let lastError: unknown;
 
     for (let attempt = 0; attempt < this.fallbackModels.length; attempt++) {
-      const modelName = this.fallbackModels[attempt] || 'gemini-3.7-flash';
+      const modelName = this.fallbackModels[attempt];
       try {
         const response = await this.ai.models.generateContent({
           ...(options as any),

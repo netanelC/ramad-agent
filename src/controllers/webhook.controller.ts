@@ -50,7 +50,7 @@ export class WebhookController {
         await whatsAppService.sendReaction(from, messageId, '❌');
       }
 
-      const errorMessage = `⚠️ נתקלתי בשגיאה בעיבוד הבקשה. פרטים: ${errorDetails || 'שגיאה לא צפויה'}`;
+      const errorMessage = `⚠️ נתקלתי בשגיאה בעיבוד הבקשה שלך. הפעולה לא הושלמה. פרטים: ${errorDetails || 'שגיאה לא צפויה'}`;
       try {
         await whatsAppService.sendMessage(from || config.allowedPhoneNumber, errorMessage);
       } catch (sendErr: unknown) {
