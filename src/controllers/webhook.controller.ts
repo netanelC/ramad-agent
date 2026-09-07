@@ -32,15 +32,25 @@ export class WebhookController {
     if (!message || message.type !== 'text' || !message.text) return;
 
     const from = message.from;
+    const messageId = message.id;
     const text = message.text.body.trim();
 
+    // 1. Immediate reaction emoji ⏳ to signal request is received & processing
+    if (messageId) {
+      await whatsAppService.sendReaction(from, messageId, '⏳');
+    }
+
     try {
-      await agentService.processIncomingMessage(from, text);
+      await agentService.processIncomingMessage(from, text, messageId);
     } catch (err: unknown) {
       const errorDetails = err instanceof Error ? err.message : String(err);
       console.error('Unhandled error in Webhook Controller:', errorDetails);
 
-      const errorMessage = `⚠️ נתקלתי בשגיאה בעיבוד הבקשה שלך. הפעולה לא הושלמה. פרטים: ${errorDetails || 'שגיאה לא צפויה'}`;
+      if (messageId) {
+        await whatsAppService.sendReaction(from, messageId, '❌');
+      }
+
+      const errorMessage = `⚠️ נתקלתי בשגיאה בעיבוד הבקשה. פרטים: ${errorDetails || 'שגיאה לא צפויה'}`;
       try {
         await whatsAppService.sendMessage(from || config.allowedPhoneNumber, errorMessage);
       } catch (sendErr: unknown) {

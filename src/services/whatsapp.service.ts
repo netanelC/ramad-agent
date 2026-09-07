@@ -39,6 +39,40 @@ export class WhatsAppService {
       }
     }
   }
+
+  public async sendReaction(to: string, messageId: string, emoji: string): Promise<void> {
+    if (!to || !messageId) return;
+
+    try {
+      await axios.post(
+        `https://graph.facebook.com/v20.0/${config.phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to,
+          type: 'reaction',
+          reaction: {
+            message_id: messageId,
+            emoji,
+          },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${config.metaAccessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error)) {
+        console.error('Failed to send WhatsApp reaction:', error.response?.data || error.message);
+      } else if (error instanceof Error) {
+        console.error('Failed to send WhatsApp reaction:', error.message);
+      } else {
+        console.error('Failed to send WhatsApp reaction:', error);
+      }
+    }
+  }
 }
 
 export const whatsAppService = new WhatsAppService();
