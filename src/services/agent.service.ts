@@ -59,6 +59,17 @@ export class AgentService {
             impact,
             recommendation,
           });
+        } else if (call.name === 'add_staff_interface') {
+          const domain = String(call.args.domain || '');
+          const roleAndContact = String(call.args.roleAndContact || '');
+          const responsibilities = String(call.args.responsibilities || '');
+          const sop = String(call.args.sop || '');
+          messageResult = await sheetsService.addStaffInterface(
+            domain,
+            roleAndContact,
+            responsibilities,
+            sop
+          );
         } else {
           messageResult = `שגיאה: פונקציה אינה מוכרת (${call.name}).`;
         }

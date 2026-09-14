@@ -268,7 +268,7 @@ export class SheetsService {
     try {
       const res = await this.sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
-        range: 'אנשים_ופיתוח!A2:O50',
+        range: 'אנשים_ופיתוח!A4:O60',
       });
 
       const rows = res.data.values || [];
@@ -278,8 +278,8 @@ export class SheetsService {
       sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6);
       const sixMonthsStr = sixMonthsFromNow.toISOString().slice(0, 10);
 
+      const allPeopleLines: string[] = [];
       const peopleAtRisk: PersonItem[] = [];
-      const prominentPeople: PersonItem[] = [];
 
       for (const row of rows) {
         if (!row || row.length < 1) continue;
@@ -301,6 +301,9 @@ export class SheetsService {
         const nextMeetingDate = (row[13] || '').toString().trim();
         const notes = (row[14] || '').toString().trim();
 
+        const personLine = `• ${name} | צוות: ${team || 'ללא'} | דרגה: ${rank || 'ללא'} | תפקיד: ${role || 'ללא'} | אוכלוסייה: ${population || 'ללא'}${releaseDate ? ` | תאריך שחרור: ${releaseDate}` : ''}${notes ? ` | הערות: ${notes}` : ''}`;
+        allPeopleLines.push(personLine);
+
         const isRiskRelease = Boolean(
           releaseDate &&
             releaseDate <= sixMonthsStr &&
@@ -309,35 +312,27 @@ export class SheetsService {
 
         const isRiskMeeting = Boolean(nextMeetingDate && nextMeetingDate < todayStr);
 
-        const personItem: PersonItem = {
-          name,
-          team,
-          population,
-          rank,
-          role,
-          releaseDate,
-          horizonStatus,
-          personalGoal,
-          lastMeetingDate,
-          nextMeetingDate,
-          notes,
-          isRiskRelease,
-          isRiskMeeting,
-        };
-
         if (isRiskRelease || isRiskMeeting) {
-          peopleAtRisk.push(personItem);
+          peopleAtRisk.push({
+            name,
+            team,
+            population,
+            rank,
+            role,
+            releaseDate,
+            horizonStatus,
+            personalGoal,
+            lastMeetingDate,
+            nextMeetingDate,
+            notes,
+            isRiskRelease,
+            isRiskMeeting,
+          });
         }
+      }
 
-        if (
-          notes.includes('הצטיינות') ||
-          notes.includes('דמ"ח') ||
-          personalGoal.includes('הצטיינות') ||
-          population.includes('קבע') ||
-          role.includes('רש"צ')
-        ) {
-          prominentPeople.push(personItem);
-        }
+      if (allPeopleLines.length === 0) {
+        return '[תמונת מצב חיה מתוך גיליון אנשים_ופיתוח]: לא נמצאו נתוני חיילים/קצינים בגיליון.';
       }
 
       let riskSection = '';
@@ -349,25 +344,81 @@ export class SheetsService {
           return `• [${p.team}] ${p.rank} ${p.name} (${p.role}) | סיכון: ${reasons.join(' | ')}`;
         });
         riskSection = `🚨 משרתים במוקד סיכון (${peopleAtRisk.length}):\n${riskLines.join('\n')}`;
-      } else {
-        riskSection = '🚨 משרתים במוקד סיכון: אין משרתים במוקד סיכון כעת.';
       }
 
-      let prominentSection = '';
-      if (prominentPeople.length > 0) {
-        const prominentLines = prominentPeople.map((p) => {
-          const detail = p.notes ? ` | הערות/סטטוס: ${p.notes}` : '';
-          const goal = p.personalGoal ? ` | יעד: ${p.personalGoal}` : '';
-          return `• [${p.team}] ${p.rank} ${p.name} (${p.role})${goal}${detail}`;
-        });
-        prominentSection = `⭐ סטטוס פיתוח, הצטיינות ודמ"ח (${prominentPeople.length}):\n${prominentLines.join('\n')}`;
-      }
-
-      return `[תמונת מצב חיה מתוך גיליון אנשים_ופיתוח]\n${riskSection}\n\n${prominentSection}`.trim();
+      return `[רשימת המשרתים המלאה מתוך גיליון אנשים_ופיתוח (${allPeopleLines.length} חיילים/קצינים)]\n${allPeopleLines.join('\n')}${riskSection ? `\n\n${riskSection}` : ''}`.trim();
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error('Error fetching people context from Google Sheets:', errMsg);
       return '[תמונת מצב חיה מתוך גיליון אנשים_ופיתוח]: לא ניתן לשלוק נתוני אנשים כעת בשל שגיאה.';
+    }
+  }
+
+  public async getStaffInterfacesContext(): Promise<string> {
+    try {
+      const res = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: config.spreadsheetId,
+        range: 'ממשקי_מטה!A2:F30',
+      });
+
+      const rows = res.data.values || [];
+      const interfacesLines: string[] = [];
+
+      for (const row of rows) {
+        if (!row || row.length < 1) continue;
+
+        const domain = (row[0] || '').toString().trim();
+        if (!domain || domain.startsWith('תחום') || domain.startsWith('נושא')) {
+          continue;
+        }
+
+        const roleAndContact = (row[1] || '').toString().trim();
+        const responsibilities = (row[2] || '').toString().trim();
+        const sop = (row[3] || '').toString().trim();
+        const channel = (row[4] || '').toString().trim();
+        const notes = (row[5] || '').toString().trim();
+
+        const channelStr = channel ? ` | ערוץ/תדירות: ${channel}` : '';
+        const notesStr = notes ? ` | הערות: ${notes}` : '';
+
+        interfacesLines.push(
+          `• [תחום: ${domain}] גורם/איש קשר: ${roleAndContact} | אחריות: ${responsibilities} | SOP/נוהל: ${sop}${channelStr}${notesStr}`
+        );
+      }
+
+      if (interfacesLines.length === 0) {
+        return '[ממשקי מטה, נהלים ו-SOPs]: אין כרגע נתונים בגיליון ממשקי_מטה.';
+      }
+
+      return `[ממשקי מטה, נהלים ו-SOPs]\n${interfacesLines.join('\n')}`;
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error('Error fetching staff interfaces context from Google Sheets:', errMsg);
+      return '';
+    }
+  }
+
+  public async addStaffInterface(
+    domain: string,
+    roleAndContact: string,
+    responsibilities: string,
+    sop: string
+  ): Promise<string> {
+    try {
+      await this.sheets.spreadsheets.values.append({
+        spreadsheetId: config.spreadsheetId,
+        range: 'ממשקי_מטה!A:F',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: [[domain, roleAndContact, responsibilities, sop, '', '']],
+        },
+      });
+
+      return `איש מטה / נוהל חדש בתחום "${domain}" מול "${roleAndContact}" התווסף בהצלחה לגיליון ממשקי_מטה.`;
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error('Error adding staff interface:', errMsg);
+      return `שגיאה בהוספת איש מטה / נוהל: ${errMsg}`;
     }
   }
 
@@ -433,14 +484,15 @@ export class SheetsService {
   }
 
   public async getSystemContext(): Promise<string> {
-    const [tasksContext, peopleContext, memoryContext, archiveContext] = await Promise.all([
+    const [tasksContext, peopleContext, memoryContext, archiveContext, staffContext] = await Promise.all([
       this.getLiveTasksContext(),
       this.getPeopleContext(),
       this.getActiveMemoryInsights(),
       this.getArchivedTasksContext(),
+      this.getStaffInterfacesContext(),
     ]);
 
-    return [tasksContext, peopleContext, memoryContext, archiveContext]
+    return [tasksContext, peopleContext, memoryContext, archiveContext, staffContext]
       .filter((s) => s && s.trim().length > 0)
       .join('\n\n');
   }
