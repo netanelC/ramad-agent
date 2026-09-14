@@ -21,9 +21,9 @@ export class AgentService {
     const agentResult = await geminiService.generateAgentResponse(text, systemContext);
 
     // 3. Check if Gemini requested Function Calls (Tools)
-    if (agentResult.functionCalls && agentResult.functionCalls.length > 0) {
-      const toolResults: string[] = [];
+    const toolResults: string[] = [];
 
+    if (agentResult.functionCalls && agentResult.functionCalls.length > 0) {
       for (const call of agentResult.functionCalls) {
         let messageResult: string;
 
@@ -76,7 +76,14 @@ export class AgentService {
 
         toolResults.push(messageResult);
       }
+    }
 
+    // 4. Send success reaction emoji ✅ BEFORE sending response message
+    if (messageId) {
+      await whatsAppService.sendReaction(from, messageId, '✅');
+    }
+
+    if (agentResult.functionCalls && agentResult.functionCalls.length > 0) {
       // Direct Confirmation response without extra API roundtrip
       const bullets = toolResults.map((r) => `• ${r}`).join('\n');
       const extraText = agentResult.text && agentResult.text.trim() ? `\n\n${agentResult.text.trim()}` : '';
@@ -91,11 +98,6 @@ export class AgentService {
       if (reply.includes('אינבוקס טיוטות') || text.startsWith('משימה:')) {
         await sheetsService.appendDraftTask(text);
       }
-    }
-
-    // Success reaction emoji ✅
-    if (messageId) {
-      await whatsAppService.sendReaction(from, messageId, '✅');
     }
   }
 }
