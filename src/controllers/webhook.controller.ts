@@ -21,7 +21,8 @@ export class WebhookController {
   }
 
   public async handleWebhookPayload(req: Request, res: Response): Promise<void> {
-    res.sendStatus(200); // Immediate 200 response for Meta webhook API
+    // 1. שלח מיד 200 ל-Meta לפני כל await או פעולה אסינכרונית!
+    res.status(200).send('EVENT_RECEIVED');
 
     const body = req.body as WhatsAppWebhookPayload;
     if (body.object !== 'whatsapp_business_account') return;
