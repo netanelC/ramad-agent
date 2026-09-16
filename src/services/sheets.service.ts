@@ -58,10 +58,6 @@ export interface StaffInterfaceItem {
   notes?: string;
 }
 
-export interface DraftItem {
-  id: string;
-  text: string;
-}
 
 export interface SheetOperationResult {
   success: boolean;
@@ -992,48 +988,19 @@ export class SheetsService {
     }
   }
 
-  public async getPendingDrafts(): Promise<DraftItem[]> {
-    try {
-      const res = await this.sheets.spreadsheets.values.get({
-        spreadsheetId: config.spreadsheetId,
-        range: 'אינבוקס_טיוטות!A2:F50',
-      });
-
-      const rows = res.data.values || [];
-      const drafts: DraftItem[] = [];
-
-      for (const row of rows) {
-        if (!row || row.length < 2) continue;
-        const id = (row[0] || '').toString().trim();
-        const text = (row[1] || '').toString().trim();
-        const status = (row[5] || '').toString().trim();
-
-        if (!id || id === 'מזהה טיוטה') continue;
-
-        if (status === 'ממתין לאפייה') {
-          drafts.push({ id, text });
-        }
-      }
-
-      return drafts;
-    } catch (error: unknown) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      console.error('Error fetching pending drafts from Google Sheets:', errMsg);
-      return [];
-    }
-  }
-
-  public async bakeDraft(
-    draftId: string,
-    taskTitle: string,
-    team: string,
-    tgb: string,
-    priority: string
-  ): Promise<string> {
+  public async createTask(task: {
+    title: string;
+    team: string;
+    tgb: string;
+    priority: string;
+    effort?: string;
+    contacts?: string;
+    notes?: string;
+  }): Promise<string> {
     try {
       const tasksRes = await this.sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
-        range: 'משימות_ותגב!A2:N50',
+        range: 'משימות_ותגב!A2:N100',
       });
 
       const taskRows = tasksRes.data.values || [];
@@ -1047,74 +1014,42 @@ export class SheetsService {
         }
       }
 
-      const nextTaskId = maxId > 0 ? (maxId + 1).toString() : '18';
+      const nextId = maxId > 0 ? (maxId + 1).toString() : '18';
       const todayDate = new Date().toISOString().slice(0, 10);
 
-      let formattedPriority = priority;
-      if (priority.toUpperCase().startsWith('P1')) {
+      let formattedPriority = task.priority;
+      if (task.priority.toUpperCase().startsWith('P1')) {
         formattedPriority = 'P1 - קריטי/צוואר בקבוק';
-      } else if (priority.toUpperCase().startsWith('P2')) {
+      } else if (task.priority.toUpperCase().startsWith('P2')) {
         formattedPriority = 'P2 - חשוב/דחוף';
-      } else if (priority.toUpperCase().startsWith('P3')) {
+      } else if (task.priority.toUpperCase().startsWith('P3')) {
         formattedPriority = 'P3 - שגרתי';
       }
 
       const taskRowData: Record<string, any> = {
-        'מזהה משימה': nextTaskId,
-        'משימה': taskTitle,
-        'צוות': team,
-        'אנשי קשר וגורמי חוץ': '',
-        'תג"ב מקורי': tgb,
+        'מזהה משימה': nextId,
+        'משימה': task.title,
+        'צוות': task.team,
+        'אנשי קשר וגורמי חוץ': task.contacts || '',
+        'תג"ב מקורי': task.tgb,
         'תג"ב מעודכן': '',
         'מונה דחיות': '0',
         'עדיפות': formattedPriority,
-        'רמת קשב וזמן עבודה': 'קשב בינוני [שעה-שעתיים]',
+        'רמת קשב וזמן עבודה': task.effort || 'קשב בינוני [שעה-שעתיים]',
         'שלב עבודה': 'טרם החל',
         'תאריך פתיחה': todayDate,
         'ימים פתוחה': '0',
         'סטטוס': 'פתוח',
-        'הערות ותאריך סגירה': `אפוי מאינבוקס טיוטות (${draftId})`,
+        'הערות ותאריך סגירה': task.notes || '',
       };
 
-      // 1. Append task dynamically via headers
       await this.appendRowByHeaders('משימות_ותגב', taskRowData, 1);
 
-      // 2. Update draft status via updateCellByHeader
-      await this.updateCellByHeader(
-        'אינבוקס_טיוטות',
-        'מזהה טיוטה',
-        draftId,
-        'סטטוס',
-        'הועבר לגיליון משימות',
-        1
-      );
-
-      return `טיוטה ${draftId} נאפתה בהצלחה למשימה חדשה [מזהה ${nextTaskId}] ("${taskTitle}") בגיליון משימות_ותגב.`;
+      return `משימה חדשה [מזהה ${nextId}] ("${task.title}") נוצרה בהצלחה בגיליון משימות_ותגב עבור צוות ${task.team}, תג"ב ${task.tgb}, עדיפות ${formattedPriority}.`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error(`Error baking draft ${draftId}:`, errMsg);
-      return `שגיאה באפיית טיוטה ${draftId}: ${errMsg}`;
-    }
-  }
-
-  public async appendDraftTask(taskText: string): Promise<void> {
-    try {
-      const draftData: Record<string, any> = {
-        'מזהה טיוטה': `D-${Date.now().toString().slice(-4)}`,
-        'תוכן הטיוטה החטופה': taskText,
-        'תאריך ושעת נקלטה': new Date().toISOString().replace('T', ' ').slice(0, 16),
-        'צוות משוער': 'טרם זוהה',
-        'חוסרים לזיהוי': 'חסר תג"ב/עדיפות',
-        'סטטוס': 'ממתין לאפייה',
-      };
-
-      await this.appendRowByHeaders('אינבוקס_טיוטות', draftData, 1);
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        console.error('Failed to append draft to Google Sheets:', error.message);
-      } else {
-        console.error('Failed to append draft to Google Sheets:', error);
-      }
+      console.error(`Error creating task "${task.title}":`, errMsg);
+      return `שגיאה ביצירת משימה: ${errMsg}`;
     }
   }
 }

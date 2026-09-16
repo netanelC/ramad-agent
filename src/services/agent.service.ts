@@ -39,13 +39,23 @@ export class AgentService {
           const taskId = String(call.args.taskId || '');
           const newPriority = String(call.args.newPriority || '');
           messageResult = await sheetsService.updateTaskPriority(taskId, newPriority);
-        } else if (call.name === 'bake_draft') {
-          const draftId = String(call.args.draftId || '');
-          const taskTitle = String(call.args.taskTitle || '');
+        } else if (call.name === 'create_task') {
+          const title = String(call.args.title || '');
           const team = String(call.args.team || '');
           const tgb = String(call.args.tgb || '');
           const priority = String(call.args.priority || '');
-          messageResult = await sheetsService.bakeDraft(draftId, taskTitle, team, tgb, priority);
+          const effort = String(call.args.effort || '');
+          const contacts = String(call.args.contacts || '');
+          const notes = String(call.args.notes || '');
+          messageResult = await sheetsService.createTask({
+            title,
+            team,
+            tgb,
+            priority,
+            effort,
+            contacts,
+            notes,
+          });
         } else if (call.name === 'save_memory_insight') {
           const domain = String(call.args.domain || '');
           const patternType = String(call.args.patternType || '');
@@ -94,10 +104,6 @@ export class AgentService {
       // Direct text response from Gemini
       const reply = agentResult.text || 'נקלט.';
       await whatsAppService.sendMessage(targetRecipient, reply);
-
-      if (reply.includes('אינבוקס טיוטות') || text.startsWith('משימה:')) {
-        await sheetsService.appendDraftTask(text);
-      }
     }
   }
 }

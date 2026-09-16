@@ -39,27 +39,6 @@ export async function runDailyFocus(): Promise<void> {
   }
 }
 
-export async function runInboxBake(): Promise<void> {
-  if (!config.allowedPhoneNumber) return;
-
-  try {
-    const pendingDrafts = await sheetsService.getPendingDrafts();
-
-    if (pendingDrafts.length === 0) {
-      console.log('No pending drafts to bake at 17:30.');
-      return;
-    }
-
-    const draftsList = pendingDrafts.map((d) => `• [${d.id}] "${d.text}"`).join('\n');
-    const messageText = `📥 17:30 - יש ${pendingDrafts.length} טיוטות שנזרקו היום. בוא נסגור להן תג"ב וצוות עכשיו:\n${draftsList}`;
-
-    await whatsAppService.sendMessage(config.allowedPhoneNumber, messageText);
-  } catch (err: unknown) {
-    console.error('Error executing 17:30 inbox baking cron job:', err);
-    throw err;
-  }
-}
-
 export async function runThursdayWeeklyRetro(): Promise<void> {
   if (!config.allowedPhoneNumber) return;
 
@@ -89,15 +68,10 @@ export function initializeCronJobs(): void {
     runDailyFocus().catch((e) => console.error(e));
   });
 
-  // Sun-Thu 17:30 (Inbox baking - אפיית אינבוקס)
-  cron.schedule('30 17 * * 0-4', () => {
-    runInboxBake().catch((e) => console.error(e));
-  });
-
   // Thursday 18:00 (Weekly review / mirror - מבט במראה)
   cron.schedule('0 18 * * 4', () => {
     runThursdayWeeklyRetro().catch((e) => console.error(e));
   });
 
-  console.log('Cron jobs scheduled successfully with live data integrations.');
+  console.log('Cron jobs scheduled successfully (Sunday 07:00, Mon-Wed 07:30, Thursday 18:00).');
 }

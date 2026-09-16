@@ -5,7 +5,6 @@ import {
   initializeCronJobs,
   runSundayWeeklyBrief,
   runDailyFocus,
-  runInboxBake,
   runThursdayWeeklyRetro,
 } from './cron/scheduler.js';
 
@@ -45,19 +44,6 @@ app.get('/cron/daily-focus', async (req, res) => {
   try {
     await runDailyFocus();
     res.status(200).json({ status: 'success', message: 'Daily focus executed' });
-  } catch (err: unknown) {
-    const errorDetails = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: errorDetails });
-  }
-});
-
-app.get('/cron/inbox-bake', async (req, res) => {
-  if (!isTokenValid(req)) {
-    return res.status(403).json({ error: 'Unauthorized token' });
-  }
-  try {
-    await runInboxBake();
-    res.status(200).json({ status: 'success', message: 'Inbox bake executed' });
   } catch (err: unknown) {
     const errorDetails = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: errorDetails });
