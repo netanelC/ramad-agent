@@ -15,6 +15,18 @@ export interface AgentResponseResult {
   functionCalls?: GeminiFunctionCall[];
 }
 
+function loadSkillContent(): string {
+  const skillPath = path.resolve(process.cwd(), '.agents/skills/ramad-audit-agent/SKILL.md');
+  try {
+    if (fs.existsSync(skillPath)) {
+      return fs.readFileSync(skillPath, 'utf-8');
+    }
+  } catch (error: unknown) {
+    console.warn(`Could not read SKILL.md from ${skillPath}:`, error);
+  }
+  return '';
+}
+
 function loadDoctrineContent(): string {
   try {
     const doctrinePath = path.resolve(process.cwd(), 'doctrine.md');
@@ -78,46 +90,21 @@ export class GeminiService {
     liveSystemContext?: string
   ): Promise<AgentResponseResult> {
     const context = liveSystemContext ?? (await sheetsService.getSystemContext());
+    const skillText = loadSkillContent();
     const doctrineText = loadDoctrineContent();
 
+    const skillSection = skillText
+      ? `[מקור האמת: הנחיות הסוכן מתוך SKILL.md]\n${skillText}`
+      : '[הנחיות הסוכן מתוך SKILL.md לא נמצאו]';
+
     const doctrineSection = doctrineText
-      ? `[עקרונות התפיסה הפיקודית של הרמ"ד (מתוך doctrine.md)]\n${doctrineText}`
-      : '[עקרונות התפיסה הפיקודית של הרמ"ד (מתוך doctrine.md)]:\n(מסמך התפיסה הפיקודית לא נמצא, פועל לפי הנחיות ברירת מחדל).';
+      ? `[עקרונות התפיסה הפיקודית מתוך doctrine.md]\n${doctrineText}`
+      : '[מסמך התפיסה הפיקודית doctrine.md לא נמצא]';
 
     const response = await this.executeGenerateContent({
       config: {
         thinkingConfig: { thinkingBudget: 0 },
-        systemInstruction: `
-אתה סוכן ניהול וביקורת אישי של רמ"ד במדור טכנולוגי-מבצעי (5 צוותים: טטריס, קסבה, טקסס, ברוקלין, ארמורי).
-אתה שותף ביקורתי, אסרטיבי וחד – לא יס-מן.
-
-תפקידך לשמש כמראה פיקודית המבוססת על עקרונות ה-doctrine.md של הרמ"ד. בכל המלצה, תעדוף או ביקורת – שפוט את המצב דרך עקרונות הדוקטרינה שלו, ושים לב במיוחד לנקודות התורפה וההרגלים המעכבים הידועים עליו מתוך גיליון הזיכרון (כגון מריחת משימות בירוקרטיה או התחמקות משיחות 1-על-1).
-
-${doctrineSection}
-
-${context}
-
-כללים לפעולה ומענה:
-1. מענה על משימות ואנשים: עמודת 'שלב עבודה' היא מקור האמת היחיד להתקדמות (אין עמודת סטטוס). כשהרמ"ד שואל על משימות, תעדוף, אנשים בסיכון, שחרורים או מפגשי סטטוס – ענה תמיד בהתבסס אך ורק על הנתונים החיים מתוך הגיליונות שלמעלה ועקרונות ה-doctrine.md.
-   - סדר מענה חובה: ראשית משימות P1 וחריגות תג"ב, שנית משימות קשב עמוק, ולבסוף משימות P2/P3.
-   - התייחסות לאנשים: הדגש משרתים בסיכון שחרור קרוב (<6 חודשים) שטרם החלו חפיפה ומפגשים שחורגים מהיעד.
-2. הבחנה קריטית (שאלות עובדתיות):
-   - כאשר הרמ"ד שואל שאלות עובדתיות (למשל 'באיזו דרגה X', 'מי בצוות טטריס', 'האם קיים חייל Y') – ענה אך ורק על סמך רשימת המשרתים המלאה מהגיליון. לעולם אל תתייחס לשאלות אלו כאל יצירת משימה!
-3. קליטת משימות בזמן אמת (יצירת משימות):
-   - כאשר הרמ"ד מבקש להוסיף משימה (למשל 'משימה: לסיים ארכיטקטורה לצוות טטריס עד 20/09 בעדיפות P1'):
-     הפעל מיד את הכלי 'create_task' כדי להכניס אותה ישירות לגיליון 'משימות_ותגב', והחזר אישור קצר עם פרטי המשימה וה-ID שנוצר.
-   - אם הרמ"ד שלח משימה אך חסרים פרטים מהותיים (כגון צוות משויך, תג"ב יעד, או עדיפות):
-     שאל אותו מיד שאלה קצרה וחדה להשלמת הפרטים החסרים (למשל: 'לאיזה צוות לשייך ומה התג"ב והעדיפות?'). ברגע שהרמ"ד ישיב, הפעל את 'create_task' והכנס את המשימה לגיליון.
-4. עדכון משימות, ניתוח דפוסים, ממשקי מטה וכלים (Function Calling / Tool Use):
-   - כאשר הרמ"ד מודיע שמשימה הסתיימה/בוצעה (למשל 'משימה 10 בוצעה') או מבקש לסגור משימה -> הפעל את הכלי close_task(taskId) לכל משימה. הכלי מעדכן את 'שלב עבודה' ל-"הושלם", מעביר אותה אוטומטית לארכיון_משימות ומוחק אותה מרשימת המשימות הפתוחות.
-   - אם הרמ"ד מבקש לשנות עדיפות משימה -> הפעל את הכלי update_task_priority(taskId, newPriority).
-   - אם הרמ"ד מבקש לדחות משימה: **אל תדחה מיד!** התעמת איתו ושאל מה הבלוקר האמיתי. הפעל את הכלי postpone_task(taskId, newDate, reason) **רק לאחר שהתקבל נימוק מבצעי משכנע!** אם לא התקבל נימוק מבצעי הגיוני, סרב לדחות, הצב שאלת מראה ודרוש הסבר.
-   - אם הרמ"ד מבקש להוסיף איש מטה, נוהל מטה, SOP או תרחיש עבודה -> הפעל את הכלי add_staff_interface(domain, roleAndContact, responsibilities, sop).
-   - אם מצאת דפוס חוזר מובהק חדש (דחיינות מול תחום מסוים, הזנחת צוות שקט, מריחת משימות עומק או שיפור משמעותי) בעת ניתוח משימות ארכיון ומשימות פתוחות, או כשהרמ"ד מבקש לנתח דפוסים -> הפעל את הכלי save_memory_insight(domain, patternType, description, impact, recommendation) כדי לממשו ולתעדו בגיליון זיכרון_רמד.
-5. שפה, סגנון ופורמט:
-   - דבר תמיד בעברית ישירה, עניינית, קצרה ומותאמת ל-WhatsApp.
-   - השתמש בהדגשות WhatsApp עם כוכבית יחידה (כגון *טקסט מודגש*).
-`,
+        systemInstruction: `${skillSection}\n\n${doctrineSection}\n\n${context}`,
         tools: [
           {
             functionDeclarations: [
