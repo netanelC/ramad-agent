@@ -998,15 +998,24 @@ export class SheetsService {
     notes?: string;
   }): Promise<string> {
     try {
-      const tasksRes = await this.sheets.spreadsheets.values.get({
-        spreadsheetId: config.spreadsheetId,
-        range: 'משימות_ותגב!A2:N100',
-      });
+      const [activeRes, archiveRes] = await Promise.all([
+        this.sheets.spreadsheets.values.get({
+          spreadsheetId: config.spreadsheetId,
+          range: 'משימות_ותגב!A2:A500',
+        }).catch(() => null),
+        this.sheets.spreadsheets.values.get({
+          spreadsheetId: config.spreadsheetId,
+          range: 'ארכיון_משימות!A2:A500',
+        }).catch(() => null),
+      ]);
 
-      const taskRows = tasksRes.data.values || [];
+      const allRows = [
+        ...(activeRes?.data?.values || []),
+        ...(archiveRes?.data?.values || []),
+      ];
+
       let maxId = 0;
-
-      for (const r of taskRows) {
+      for (const r of allRows) {
         if (!r || !r[0]) continue;
         const num = parseInt(r[0].toString().replace(/\D/g, ''), 10);
         if (!isNaN(num) && num > maxId) {
@@ -1014,7 +1023,7 @@ export class SheetsService {
         }
       }
 
-      const nextId = maxId > 0 ? (maxId + 1).toString() : '18';
+      const nextId = (maxId + 1).toString();
       const todayDate = new Date().toISOString().slice(0, 10);
 
       let formattedPriority = task.priority;

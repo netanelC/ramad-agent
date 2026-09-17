@@ -11,7 +11,7 @@ export async function runSundayWeeklyBrief(): Promise<void> {
     const systemContext = await sheetsService.getSystemContext();
     const prompt =
       'הפק הודעת פתיחת שבוע קשוחה, חדה וממוקדת לרמ"ד המבוססת על תמונת המצב החיה (משימות עומק P1, תג"בים השבוע, שחרורים ב-6 חודשים קרובים). עשה שימוש בעקרונות ה-doctrine ובדפוסים האישיים.';
-    const agentResult = await geminiService.generateAgentResponse(prompt, systemContext);
+    const agentResult = await geminiService.generateAgentResponse(prompt, [], systemContext);
     const text =
       agentResult.text || '🌅 בוקר טוב רמ"ד. שבוע חדש. להלן תמונת המצב לפתיחת שבוע...';
 
@@ -29,7 +29,7 @@ export async function runDailyFocus(): Promise<void> {
     const systemContext = await sheetsService.getSystemContext();
     const prompt =
       'הפק הודעת בוקר קצרה וממוקדת לרמ"ד. שלוף משימות P1 וחריגות, בחר משרת/רש"צ אחד (מתוך הנתונים החיים) לשיחת 1-על-1 יזומה מהיום, וקבע 3 מיקודים דחופים.';
-    const agentResult = await geminiService.generateAgentResponse(prompt, systemContext);
+    const agentResult = await geminiService.generateAgentResponse(prompt, [], systemContext);
     const text = agentResult.text || '☀️ בוקר טוב. 3 המשימות הקריטיות להיום ושיחה אישית יזומה...';
 
     await whatsAppService.sendMessage(config.allowedPhoneNumber, text);
@@ -46,7 +46,7 @@ export async function runThursdayWeeklyRetro(): Promise<void> {
     const systemContext = await sheetsService.getSystemContext();
     const prompt =
       'הפק דוח ביקורת עצמית וסגירת שבוע נוקב ("מבט במראה") לרמ"ד, המבוסס על 5 המדדים, היסטוריית הדחיות והשינויים בגיליונות, עקרונות ה-doctrine ונקודות התורפה של הרמ"ד.';
-    const agentResult = await geminiService.generateAgentResponse(prompt, systemContext);
+    const agentResult = await geminiService.generateAgentResponse(prompt, [], systemContext);
     const text =
       agentResult.text || '🪞 18:00 - סגירת שבוע: "מבט במראה" וביקורת עצמית לפי 5 המדדים...';
 
