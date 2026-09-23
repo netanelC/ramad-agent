@@ -436,8 +436,9 @@ export class SheetsService {
       });
 
       const sampleTask = tasks[0];
+      const outputGuidance = `[הנחיית עיצוב חובה לוואטסאפ: כברירת מחדל בהצגת משימות או מיקוד יומי לרמ"ד, אין להציג מזהה משימה (ללא [מזהה X]) ואין לציין רמת עדיפות (ללא P1/P2/P3/עדיפות), אלא אם כן הרמ"ד ביקש זאת במפורש. יש להציג בצורה נקייה ופשוטה: שם המשימה, הצוות, ותג"ב בלבד].`;
       const fewShotSample = sampleTask
-        ? `[דוגמה לרשומה קיימת (Few-Shot Example)]: • [מזהה ${sampleTask.id}] משימה: "${sampleTask.name}" | צוות: ${sampleTask.team} | עדיפות: ${sampleTask.priority} | תג"ב מעודכן: ${sampleTask.tgbEffective || 'ללא'} | קשב: ${sampleTask.attention || 'שגרתי'} | שלב: ${sampleTask.stage || 'בתהליך'}`
+        ? `[דוגמה לרשומה בגיליון]: משימה "${sampleTask.name}" | צוות: ${sampleTask.team} | תג"ב: ${sampleTask.tgbEffective || 'ללא'} (מזהה פנימי: ${sampleTask.id}, עדיפות פנימית: ${sampleTask.priority})`
         : '';
 
       const formattedLines = tasks.map((t) => {
@@ -449,7 +450,7 @@ export class SheetsService {
         return `• [מזהה ${t.id}] משימה: "${t.name}" | צוות: ${t.team} | עדיפות: ${t.priority} | ${tgbStr}${attentionStr}${notesStr}${overdueTag}`;
       });
 
-      return `[תמונת מצב חיה מתוך גיליון משימות_ותגב]\n${headerSchema}\n${fewShotSample}\n\nנמצאו ${tasks.length} משימות פתוחות:\n${formattedLines.join('\n')}`;
+      return `[תמונת מצב חיה מתוך גיליון משימות_ותגב]\n${headerSchema}\n${outputGuidance}\n${fewShotSample}\n\nנמצאו ${tasks.length} משימות פתוחות:\n${formattedLines.join('\n')}`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       logger.error({ err: error }, 'Error fetching live tasks context from Google Sheets');

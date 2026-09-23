@@ -181,7 +181,16 @@ export class GeminiService {
       ? `[עקרונות התפיסה הפיקודית מתוך doctrine.md]\n${doctrineText}`
       : '[מסמך התפיסה הפיקודית doctrine.md לא נמצא]';
 
-    const systemInstruction = `${skillSection}\n\n${doctrineSection}\n\n${context}`;
+    const cleanFormattingDirective = `
+[הנחיית עיצוב קריטית להודעות וואטסאפ]:
+1. כברירת מחדל, כאשר אתה מציג משימות או מיקוד יומי/שבועי לרמ"ד, לעולם אל תציג מזהה משימה (ללא [מזהה X], ללא מזהה, ללא ID) ולעולם אל תציין את רמת העדיפות (ללא P1, P2, P3, עדיפות) — אלא אם כן הרמ"ד ביקש זאת במפורש בהודעתו (למשל: "כולל מזהים", "עם עדיפויות", "תציג מזהים").
+2. ההודעה בוואטסאפ צריכה להיות פשוטה, נקייה, קצרה וקריאה בנייד:
+   דוגמה לפורמט נקי כברירת מחדל:
+   • *שם המשימה* | צוות: קסבה | תג"ב: 24/09
+3. המזהים ורמות העדיפות נועדו לשימוש הפנימי שלך לצורך תיעדוף משימות והפעלת כלים (כגון close_task, postpone_task). אל תחשוף אותם למשתמש אלא אם כן נתבקשת באופן יזום ומפורש.
+`;
+
+    const systemInstruction = `${skillSection}\n\n${doctrineSection}\n\n${cleanFormattingDirective}\n\n${context}`;
     const contents = this.buildContents(userText, history);
 
     const toolsConfig = [
