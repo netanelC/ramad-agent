@@ -87,15 +87,18 @@ flowchart TD
 
 ### Execution Rules & Parameter Defaults
 
-1. **Date Parsing (תג"ב ברזל)**:
+1. **Mandatory Team and TGB Confirmation (חובת בירור צוות ותאריך גמר ביצוע)**:
+   - When RAMAD writes or adds a task without specifying the team or the target completion date (תג"ב), **stop immediately and ask RAMAD** for the missing detail(s).
+   - Never invent, assume a default team, or guess a completion date. Do not execute `create_task` until both team and TGB are confirmed by RAMAD.
+2. **Date Parsing (תג"ב ברזל)**:
    - Convert all relative time statements ("עד יום חמישי", "בסוף השבוע", "שבוע הבא") automatically to exact dates in `YYYY-MM-DD` format according to current calendar time.
-2. **Mandatory Priority Classification**:
+3. **Mandatory Priority Classification**:
    - Priority (`P1` / `P2` / `P3`) is **mandatory**. If RAMAD does not specify priority when adding a task, **stop immediately** and ask 1 short question to confirm priority before inserting into the sheet.
-3. **Managerial Task Scope**:
+4. **Managerial Task Scope**:
    - Tasks in `משימות_ותגב` are section-head managerial tasks (משימות ניהוליות). Do not demand Jira issue IDs for these tasks.
-4. **Task Completion (`close_task`)**:
+5. **Task Completion (`close_task`)**:
    - Update work stage to `הושלם`, move row to `ארכיון_משימות`, delete from `משימות_ותגב`.
-5. **Task Postponement (Veto Rule)**:
+6. **Task Postponement (Veto Rule)**:
    - Challenge comfort-driven delays. Demand true blocker. Execute `postpone_task` only when sound operational rationale is confirmed.
 
 ---

@@ -1102,6 +1102,13 @@ export class SheetsService {
     contacts?: string;
     notes?: string;
   }): Promise<string> {
+    if (!task.title?.trim()) {
+      return 'שגיאה: חסרה כותרת למשימה. שאל את הרמ"ד מה תוכן המשימה.';
+    }
+    if (!task.team?.trim() || !task.tgb?.trim()) {
+      return 'שגיאה: חובה להגדיר צוות ותאריך גמר ביצוע (תג"ב) לפני יצירת המשימה בגיליון. שאל את הרמ"ד לאיזה צוות לשייך ומה תאריך היעד.';
+    }
+
     try {
       const [activeRes, archiveRes] = await Promise.all([
         this.sheets.spreadsheets.values.get({
