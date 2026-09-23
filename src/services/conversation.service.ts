@@ -1,3 +1,5 @@
+import { logger } from '../common/logger.js';
+
 export interface ChatTurn {
   role: 'user' | 'model';
   text: string;
@@ -6,7 +8,37 @@ export interface ChatTurn {
 
 export class ConversationService {
   private historyMap: Map<string, ChatTurn[]> = new Map();
-  private maxTurns: number = 20; // Keep up to 20 recent messages for context threading
+  private processedMessageIds: Map<string, number> = new Map();
+  private readonly maxTurns: number = 20;
+  private readonly deduplicationTtlMs: number = 5 * 60 * 1000; // 5 minutes TTL
+
+  constructor() {
+    // Periodic sweep to clean up expired message deduplication entries
+    const cleanupInterval = setInterval(() => this.cleanupExpiredMessages(), 60 * 1000);
+    cleanupInterval.unref();
+  }
+
+  public isDuplicateMessage(messageId: string): boolean {
+    const now = Date.now();
+    const expiry = this.processedMessageIds.get(messageId);
+
+    if (expiry && expiry > now) {
+      logger.debug({ messageId }, 'Duplicate incoming message detected and ignored');
+      return true;
+    }
+
+    this.processedMessageIds.set(messageId, now + this.deduplicationTtlMs);
+    return false;
+  }
+
+  private cleanupExpiredMessages(): void {
+    const now = Date.now();
+    for (const [id, expiry] of this.processedMessageIds.entries()) {
+      if (expiry <= now) {
+        this.processedMessageIds.delete(id);
+      }
+    }
+  }
 
   public getHistory(phoneNumber: string): ChatTurn[] {
     return this.historyMap.get(phoneNumber) || [];
@@ -22,7 +54,6 @@ export class ConversationService {
       timestamp: new Date(),
     });
 
-    // Trim to keep only maxTurns
     if (history.length > this.maxTurns) {
       history.splice(0, history.length - this.maxTurns);
     }

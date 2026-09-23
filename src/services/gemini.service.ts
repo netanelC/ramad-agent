@@ -1,13 +1,15 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, Type, type GenerateContentResponse, type Content, type Part } from '@google/genai';
 import fs from 'fs';
 import path from 'path';
 import { config } from '../config/env.js';
 import { sheetsService } from './sheets.service.js';
 import type { ChatTurn } from './conversation.service.js';
+import { logger } from '../common/logger.js';
+import { ExternalServiceError } from '../common/errors/app-error.js';
 
 export interface GeminiFunctionCall {
   name: string;
-  args: Record<string, any>;
+  args: Record<string, unknown>;
   id?: string;
 }
 
@@ -19,47 +21,67 @@ export interface AgentResponseResult {
 
 export type ToolExecutor = (call: GeminiFunctionCall) => Promise<string>;
 
+let cachedSkillContent: string | null = null;
+let cachedDoctrineContent: string | null = null;
+
 function loadSkillContent(): string {
+  if (cachedSkillContent !== null) return cachedSkillContent;
   const skillPath = path.resolve(process.cwd(), '.agents/skills/ramad-audit-agent/SKILL.md');
   try {
     if (fs.existsSync(skillPath)) {
-      return fs.readFileSync(skillPath, 'utf-8');
+      cachedSkillContent = fs.readFileSync(skillPath, 'utf-8');
+      return cachedSkillContent;
     }
   } catch (error: unknown) {
-    console.warn(`Could not read SKILL.md from ${skillPath}:`, error);
+    logger.warn({ err: error, skillPath }, 'Could not read SKILL.md');
   }
   return '';
 }
 
 function loadDoctrineContent(): string {
+  if (cachedDoctrineContent !== null) return cachedDoctrineContent;
   try {
     const doctrinePath = path.resolve(process.cwd(), 'doctrine.md');
     if (fs.existsSync(doctrinePath)) {
-      return fs.readFileSync(doctrinePath, 'utf-8');
+      cachedDoctrineContent = fs.readFileSync(doctrinePath, 'utf-8');
+      return cachedDoctrineContent;
     }
   } catch (error: unknown) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    console.warn('Could not read doctrine.md file:', errMsg);
+    logger.warn({ err: error }, 'Could not read doctrine.md file');
   }
   return '';
 }
 
 export class GeminiService {
   private ai: GoogleGenAI;
-  private fallbackModels: string[] = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash'];
+  private fallbackModels: string[] = [
+    config.geminiModel || 'gemini-3.6-flash',
+    'gemini-3.6-flash',
+    'gemini-3.7-flash',
+    'gemini-2.5-flash',
+  ].filter((m, i, self) => m && self.indexOf(m) === i);
 
   constructor() {
     this.ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
   }
 
-  private async executeGenerateContent(options: Record<string, any>): Promise<any> {
+  private extractTextFromResponse(response: GenerateContentResponse): string {
+    const parts = response.candidates?.[0]?.content?.parts || [];
+    return parts
+      .filter((p: Part) => typeof p.text === 'string' && p.text.trim())
+      .map((p: Part) => (p.text ? p.text.trim() : ''))
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  private async executeGenerateContent(options: Record<string, unknown>): Promise<GenerateContentResponse> {
     let lastError: unknown;
 
     for (let attempt = 0; attempt < this.fallbackModels.length; attempt++) {
-      const modelName = this.fallbackModels[attempt];
+      const modelName = this.fallbackModels[attempt] || 'gemini-3.6-flash';
       try {
         const response = await this.ai.models.generateContent({
-          ...(options as any),
+          ...(options as unknown as Parameters<typeof this.ai.models.generateContent>[0]),
           model: modelName,
         });
         return response;
@@ -74,29 +96,38 @@ export class GeminiService {
           errMsg.includes('429') ||
           errMsg.includes('RESOURCE_EXHAUSTED');
 
-        console.warn(
-          `Gemini API call with model '${modelName}' failed (attempt ${attempt + 1}/${this.fallbackModels.length}, transient: ${isTransientError}): ${errMsg}`
+        const isModelUnavailable =
+          errMsg.includes('NOT_FOUND') ||
+          errMsg.includes('404') ||
+          errMsg.includes('no longer available') ||
+          errMsg.includes('not supported') ||
+          errMsg.includes('unsupported');
+
+        logger.warn(
+          { modelName, attempt: attempt + 1, totalAttempts: this.fallbackModels.length, isTransientError, isModelUnavailable, errMsg },
+          'Gemini API model attempt failed'
         );
 
-        if (!isTransientError) {
-          throw error;
+        if (!isTransientError && !isModelUnavailable) {
+          throw new ExternalServiceError('Gemini API', errMsg);
         }
 
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
 
-    throw lastError;
+    const finalErrMsg = lastError instanceof Error ? lastError.message : String(lastError);
+    throw new ExternalServiceError('Gemini API', finalErrMsg);
   }
 
-  private buildContents(userText: string, history: ChatTurn[] = []): any[] {
-    const contents: any[] = [];
+  private buildContents(userText: string, history: ChatTurn[] = []): Content[] {
+    const contents: Content[] = [];
 
     for (const turn of history) {
       if (!turn.text || !turn.text.trim()) continue;
       const lastTurn = contents[contents.length - 1];
-      if (lastTurn && lastTurn.role === turn.role) {
-        lastTurn.parts[0].text += `\n${turn.text.trim()}`;
+      if (lastTurn && lastTurn.role === turn.role && lastTurn.parts?.[0]) {
+        lastTurn.parts[0].text = `${lastTurn.parts[0].text || ''}\n${turn.text.trim()}`;
       } else {
         contents.push({
           role: turn.role,
@@ -106,8 +137,8 @@ export class GeminiService {
     }
 
     const lastTurn = contents[contents.length - 1];
-    if (lastTurn && lastTurn.role === 'user') {
-      lastTurn.parts[0].text += `\n${userText.trim()}`;
+    if (lastTurn && lastTurn.role === 'user' && lastTurn.parts?.[0]) {
+      lastTurn.parts[0].text = `${lastTurn.parts[0].text || ''}\n${userText.trim()}`;
     } else {
       contents.push({
         role: 'user',
@@ -186,7 +217,7 @@ export class GeminiService {
           },
           {
             name: 'add_staff_interface',
-            description: 'מוסיפה איש מטה, נוהל מטה, SOP או תרחיש לגיליון ממשקי_מטה.',
+            description: 'מוסיפה איש מטה, נוהל מטה, SOP או תרחיש לגיליון אנשי_קשר_מטה.',
             parameters: {
               type: Type.OBJECT,
               properties: {
@@ -238,12 +269,28 @@ export class GeminiService {
               required: ['domain', 'patternType', 'description', 'impact', 'recommendation'],
             },
           },
+          {
+            name: 'update_person_details',
+            description: 'מעדכנת פרטים אישיים, יעדים, ת"ש, לימודים, או תאריכי מפגש של משרת בגיליון אנשים_ופיתוח.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: {
+                personName: { type: Type.STRING, description: 'שם החייל המדויק' },
+                targetField: {
+                  type: Type.STRING,
+                  description: 'שם העמודה המדויק (למשל: יעד אישי, תאריך יעד למפגש הבא, סטטוס אופק שירות / שימור, התאמות ת״ש / מעמד מיוחד, נע"ת, הערות, סטטוס תואר, סטטוס הצטיינות והוקרה)',
+                },
+                newValue: { type: Type.STRING, description: 'הערך החדש שיוזן לתא' },
+              },
+              required: ['personName', 'targetField', 'newValue'],
+            },
+          },
         ],
       },
     ];
 
-    let maxLoopTurns = 3;
-    let accumulatedToolResults: string[] = [];
+    const maxLoopTurns = 3;
+    const accumulatedToolResults: string[] = [];
 
     for (let turn = 0; turn < maxLoopTurns; turn++) {
       const response = await this.executeGenerateContent({
@@ -256,7 +303,7 @@ export class GeminiService {
       });
 
       const rawCalls = response.functionCalls || [];
-      const textResponse = response.text || '';
+      const textResponse = this.extractTextFromResponse(response);
 
       if (rawCalls.length === 0) {
         // No more tool calls requested. Return final text output synthesized by Gemini.
@@ -268,32 +315,43 @@ export class GeminiService {
       }
 
       // Process tool calls
-      const toolOutputs: any[] = [];
+      const toolOutputs: Array<{ name: string; response: { output: string } }> = [];
       for (const fc of rawCalls) {
+        const functionName = fc.name || 'unknown_tool';
+        const functionArgs = (fc.args as Record<string, unknown>) || {};
         const callObj: GeminiFunctionCall = {
-          name: fc.name,
-          args: fc.args || {},
-          id: fc.id,
+          name: functionName,
+          args: functionArgs,
+          ...(fc.id ? { id: fc.id } : {}),
         };
         const resultStr = await toolExecutor(callObj);
         accumulatedToolResults.push(resultStr);
         toolOutputs.push({
-          name: fc.name,
+          name: functionName,
           response: { output: resultStr },
         });
       }
 
       // Append model response & function outputs back into contents loop
-      contents.push({
-        role: 'model',
-        parts: rawCalls.map((fc: any) => ({
-          functionCall: { name: fc.name, args: fc.args },
-        })),
-      });
+      // MUST preserve response.candidates[0].content so thought_signature remains intact for Gemini API
+      const candidateContent = response.candidates?.[0]?.content;
+      if (candidateContent) {
+        contents.push(candidateContent);
+      } else {
+        contents.push({
+          role: 'model',
+          parts: rawCalls.map((fc) => ({
+            functionCall: {
+              name: fc.name || 'unknown_tool',
+              args: (fc.args as Record<string, unknown>) || {},
+            },
+          })),
+        });
+      }
 
       contents.push({
         role: 'user',
-        parts: toolOutputs.map((to: any) => ({
+        parts: toolOutputs.map((to) => ({
           functionResponse: { name: to.name, response: to.response },
         })),
       });

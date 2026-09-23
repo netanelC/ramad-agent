@@ -1,37 +1,61 @@
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { runSundayWeeklyBrief, runDailyFocus, runThursdayWeeklyRetro } from '../cron/scheduler.js';
 import { config } from '../config/env.js';
+import { UnauthorizedError, BadRequestError } from '../common/errors/app-error.js';
+import { logger } from '../common/logger.js';
 
 export class CronController {
-  public async handleCronTrigger(req: Request, res: Response): Promise<void> {
+  public async handleCronTrigger(req: Request, res: Response, next: NextFunction): Promise<void> {
     const authHeader = req.headers['authorization'];
-    const expectedToken = process.env.CRON_SECRET || config.verifyToken;
+    const expectedToken = config.cronSecret || config.verifyToken;
 
-    if (expectedToken && authHeader !== `Bearer ${expectedToken}` && req.query.token !== expectedToken) {
-      res.status(401).json({ error: 'Unauthorized cron request' });
+    if (expectedToken && authHeader !== `Bearer ${expectedToken}` && req.query['token'] !== expectedToken) {
+      next(new UnauthorizedError('Invalid or missing cron authorization token'));
       return;
     }
 
-    const job = req.params.job;
-    console.log(`Received external cron trigger for job: ${job}`);
+    const paramVal = req.params['job'];
+    const rawJob = (Array.isArray(paramVal) ? paramVal[0] || '' : paramVal || '').toLowerCase().trim();
+    const cleanJob = decodeURIComponent(rawJob).replace(/["״׳\-_ ]/g, '');
+    logger.info({ rawJob, cleanJob }, `Received trigger for job/routine: ${rawJob}`);
 
     try {
-      if (job === 'sunday-brief' || job === 'sunday') {
-        await runSundayWeeklyBrief();
-        res.status(200).json({ status: 'ok', job, message: 'Sunday weekly brief executed successfully' });
-      } else if (job === 'daily-focus' || job === 'daily') {
-        await runDailyFocus();
-        res.status(200).json({ status: 'ok', job, message: 'Daily focus executed successfully' });
-      } else if (job === 'thursday-retro' || job === 'thursday') {
-        await runThursdayWeeklyRetro();
-        res.status(200).json({ status: 'ok', job, message: 'Thursday weekly retro executed successfully' });
+      if (
+        cleanJob === 'sundaybrief' ||
+        cleanJob === 'sunday' ||
+        cleanJob === 'startweek' ||
+        cleanJob === 'weekly' ||
+        cleanJob === 'תחילתשבוע' ||
+        cleanJob === 'פתיחתשבוע'
+      ) {
+        const text = await runSundayWeeklyBrief();
+        res.status(200).json({ status: 'ok', job: rawJob, message: 'Sunday weekly brief executed successfully', text });
+      } else if (
+        cleanJob === 'dailyfocus' ||
+        cleanJob === 'daily' ||
+        cleanJob === 'boker' ||
+        cleanJob === 'morning' ||
+        cleanJob === 'בוקר' ||
+        cleanJob === 'מיקודיומי'
+      ) {
+        const text = await runDailyFocus();
+        res.status(200).json({ status: 'ok', job: rawJob, message: 'Daily focus executed successfully', text });
+      } else if (
+        cleanJob === 'thursdayretro' ||
+        cleanJob === 'thursday' ||
+        cleanJob === 'weekend' ||
+        cleanJob === 'retro' ||
+        cleanJob === 'סופש' ||
+        cleanJob === 'סגירתשבוע' ||
+        cleanJob === 'מבטבמראה'
+      ) {
+        const text = await runThursdayWeeklyRetro();
+        res.status(200).json({ status: 'ok', job: rawJob, message: 'Thursday weekly retro executed successfully', text });
       } else {
-        res.status(400).json({ error: `Unknown cron job: ${job}` });
+        next(new BadRequestError(`Unknown routine/cron job: ${rawJob}`));
       }
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error(`Error executing cron job "${job}":`, errorMsg);
-      res.status(500).json({ error: errorMsg });
+      next(err);
     }
   }
 }

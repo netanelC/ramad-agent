@@ -1,39 +1,54 @@
-export interface WhatsAppMessageText {
-  body: string;
-}
+import { z } from 'zod';
 
-export interface WhatsAppIncomingMessage {
-  from: string;
-  id: string;
-  timestamp: string;
-  type: string;
-  text?: WhatsAppMessageText;
-}
+export const whatsAppMessageTextSchema = z.object({
+  body: z.string(),
+});
 
-export interface WhatsAppValue {
-  messaging_product: string;
-  metadata: {
-    display_phone_number: string;
-    phone_number_id: string;
-  };
-  contacts?: Array<{
-    profile: { name: string };
-    wa_id: string;
-  }>;
-  messages?: WhatsAppIncomingMessage[];
-}
+export const whatsAppIncomingMessageSchema = z.object({
+  from: z.string(),
+  id: z.string(),
+  timestamp: z.string().optional(),
+  type: z.string(),
+  text: whatsAppMessageTextSchema.optional(),
+});
 
-export interface WhatsAppChange {
-  value: WhatsAppValue;
-  field: string;
-}
+export const whatsAppValueSchema = z.object({
+  messaging_product: z.string().optional(),
+  metadata: z
+    .object({
+      display_phone_number: z.string().optional(),
+      phone_number_id: z.string().optional(),
+    })
+    .optional(),
+  contacts: z
+    .array(
+      z.object({
+        profile: z.object({ name: z.string().optional() }).optional(),
+        wa_id: z.string(),
+      })
+    )
+    .optional(),
+  messages: z.array(whatsAppIncomingMessageSchema).optional(),
+});
 
-export interface WhatsAppEntry {
-  id: string;
-  changes: WhatsAppChange[];
-}
+export const whatsAppChangeSchema = z.object({
+  value: whatsAppValueSchema,
+  field: z.string().optional(),
+});
 
-export interface WhatsAppWebhookPayload {
-  object: string;
-  entry?: WhatsAppEntry[];
-}
+export const whatsAppEntrySchema = z.object({
+  id: z.string().optional(),
+  changes: z.array(whatsAppChangeSchema).optional(),
+});
+
+export const whatsAppWebhookPayloadSchema = z.object({
+  object: z.string(),
+  entry: z.array(whatsAppEntrySchema).optional(),
+});
+
+export type WhatsAppWebhookPayload = z.infer<typeof whatsAppWebhookPayloadSchema>;
+export type WhatsAppIncomingMessage = z.infer<typeof whatsAppIncomingMessageSchema>;
+export type WhatsAppValue = z.infer<typeof whatsAppValueSchema>;
+export type WhatsAppChange = z.infer<typeof whatsAppChangeSchema>;
+export type WhatsAppEntry = z.infer<typeof whatsAppEntrySchema>;
+export type WhatsAppMessageText = z.infer<typeof whatsAppMessageTextSchema>;

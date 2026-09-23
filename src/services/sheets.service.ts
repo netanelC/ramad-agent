@@ -1,5 +1,6 @@
 import { google, sheets_v4 } from 'googleapis';
 import { config } from '../config/env.js';
+import { logger } from '../common/logger.js';
 
 export interface TaskItem {
   id: string;
@@ -27,11 +28,24 @@ export interface PersonItem {
   population: string;
   rank: string;
   role: string;
+  tash?: string;
+  naat?: string;
   releaseDate: string;
   horizonStatus: string;
   personalGoal: string;
+  subGoal1?: string;
+  subGoal1Tgb?: string;
+  subGoal2?: string;
+  subGoal2Tgb?: string;
   lastMeetingDate: string;
   nextMeetingDate: string;
+  goalProgressStatus?: string;
+  degreeStatus?: string;
+  academicInstitution?: string;
+  degreeExpectedEnd?: string;
+  dmhStatus?: string;
+  excellenceStatus?: string;
+  ceremonyDateOrNotes?: string;
   notes: string;
   isRiskRelease: boolean;
   isRiskMeeting: boolean;
@@ -95,7 +109,7 @@ export class SheetsService {
    */
   public async appendRowByHeaders(
     sheetName: string,
-    rowData: Record<string, any>,
+    rowData: Record<string, unknown>,
     headerRowIndex: number = 1
   ): Promise<void> {
     try {
@@ -113,7 +127,7 @@ export class SheetsService {
         throw new Error(`Could not find header row for sheet "${sheetName}" at row ${headerRowIndex}`);
       }
 
-      const rowValues: any[] = headers.map((header) => {
+      const rowValues: unknown[] = headers.map((header) => {
         if (Object.prototype.hasOwnProperty.call(rowData, header)) {
           return rowData[header];
         }
@@ -150,7 +164,7 @@ export class SheetsService {
       });
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`Error in appendRowByHeaders for sheet "${sheetName}":`, errMsg);
+      logger.error({ err, sheetName }, `Error in appendRowByHeaders for sheet "${sheetName}": ${errMsg}`);
       throw err;
     }
   }
@@ -163,7 +177,7 @@ export class SheetsService {
     idColumnHeader: string,
     idValue: string,
     targetHeader: string,
-    newValue: any,
+    newValue: unknown,
     headerRowIndex: number = 1
   ): Promise<boolean> {
     try {
@@ -196,8 +210,9 @@ export class SheetsService {
       );
 
       if (idColIndex === -1 || targetColIndex === -1) {
-        console.warn(
-          `updateCellByHeader: Column headers not found in "${sheetName}". idCol: ${idColIndex}, targetCol: ${targetColIndex}`
+        logger.warn(
+          { sheetName, idColIndex, targetColIndex },
+          `updateCellByHeader: Column headers not found in "${sheetName}"`
         );
         return false;
       }
@@ -231,14 +246,53 @@ export class SheetsService {
       return false;
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`Error in updateCellByHeader for sheet "${sheetName}":`, errMsg);
+      logger.error({ err, sheetName }, `Error in updateCellByHeader for sheet "${sheetName}": ${errMsg}`);
       return false;
     }
   }
 
   // ==========================================
-  // ENSURE ARCHIVE SHEET TAB
-  // ==========================================
+  public async ensureSheetExists(sheetName: string, defaultHeaders?: string[]): Promise<void> {
+    try {
+      const res = await this.sheets.spreadsheets.get({
+        spreadsheetId: config.spreadsheetId,
+      });
+
+      const exists = res.data.sheets?.some(
+        (s) => s.properties?.title === sheetName
+      );
+
+      if (!exists) {
+        await this.sheets.spreadsheets.batchUpdate({
+          spreadsheetId: config.spreadsheetId,
+          requestBody: {
+            requests: [
+              {
+                addSheet: {
+                  properties: { title: sheetName },
+                },
+              },
+            ],
+          },
+        });
+
+        if (defaultHeaders && defaultHeaders.length > 0) {
+          const endLetter = this.colIndexToLetter(defaultHeaders.length - 1);
+          await this.sheets.spreadsheets.values.update({
+            spreadsheetId: config.spreadsheetId,
+            range: `${sheetName}!A1:${endLetter}1`,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: {
+              values: [defaultHeaders],
+            },
+          });
+        }
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.warn({ err, sheetName }, `Could not ensure sheet tab "${sheetName}" exists: ${errMsg}`);
+    }
+  }
 
   private async ensureArchiveSheetExists(): Promise<void> {
     try {
@@ -291,7 +345,7 @@ export class SheetsService {
         });
       }
     } catch (err: unknown) {
-      console.error('Error ensuring archive sheet tab exists:', err);
+      logger.error({ err }, 'Error ensuring archive sheet tab exists');
     }
   }
 
@@ -303,11 +357,10 @@ export class SheetsService {
     try {
       const res = await this.sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
-        range: 'משימות_ותגב!A2:N50',
+        range: 'משימות_ותגב!A4:M100',
       });
 
       const rows = res.data.values || [];
-      const todayStr = new Date().toISOString().slice(0, 10);
       const tasks: TaskItem[] = [];
 
       for (const row of rows) {
@@ -315,35 +368,34 @@ export class SheetsService {
 
         const id = (row[0] || '').toString().trim();
         const name = (row[1] || '').toString().trim();
-        const stage = (row[9] || '').toString().trim();
-        const status = (row[12] || '').toString().trim();
-
-        if (
-          !id ||
-          id === 'מזהה משימה' ||
-          stage === 'הושלם' ||
-          stage === 'מבוטל' ||
-          status === 'הושלם' ||
-          status === 'מבוטל'
-        ) {
-          continue;
-        }
+        if (!id || !name || id === 'מזהה משימה') continue;
 
         const team = (row[2] || '').toString().trim();
         const contacts = (row[3] || '').toString().trim();
         const tgbOriginal = (row[4] || '').toString().trim();
         const tgbUpdated = (row[5] || '').toString().trim();
-        const tgbEffective = tgbUpdated || tgbOriginal;
         const rejections = (row[6] || '0').toString().trim();
         const priority = (row[7] || '').toString().trim();
         const attention = (row[8] || '').toString().trim();
+        const stage = (row[9] || '').toString().trim();
         const openDate = (row[10] || '').toString().trim();
         const daysOpen = (row[11] || '').toString().trim();
-        const notes = (row[13] || '').toString().trim();
+        const notes = (row[12] || '').toString().trim();
+        const status = stage || 'פתוח';
 
-        const isRejectionsOverdue = parseInt(rejections, 10) > 0;
-        const isDateOverdue = Boolean(tgbEffective && tgbEffective < todayStr);
-        const isOverdue = isRejectionsOverdue || isDateOverdue;
+        if (stage === 'הושלם' || stage === 'מבוטל') {
+          continue;
+        }
+
+        const tgbEffective = tgbUpdated || tgbOriginal;
+        let isOverdue = false;
+        if (tgbEffective && /^\d{4}-\d{2}-\d{2}$/.test(tgbEffective)) {
+          const tgbDate = new Date(tgbEffective);
+          const now = new Date();
+          now.setHours(0, 0, 0, 0);
+          isOverdue = tgbDate < now;
+        }
+
         const isP1 = priority.toUpperCase().startsWith('P1');
 
         tasks.push({
@@ -367,10 +419,10 @@ export class SheetsService {
         });
       }
 
-      const headerSchema = `[כותרות גיליון משימות_ותגב: מזהה משימה | משימה | צוות | אנשי קשר | תג"ב מקורי | תג"ב מעודכן | מונה דחיות | עדיפות | רמת קשב | שלב עבודה | תאריך פתיחה | ימים פתוחה | סטטוס | הערות]`;
+      const headerSchema = `[כותרות גיליון משימות_ותגב: מזהה משימה | משימה | צוות | אנשי קשר וגורמי חוץ | תג"ב מקורי | תג"ב מעודכן | מונה דחיות | עדיפות | רמת קשב וזמן עבודה | שלב עבודה | תאריך פתיחה | ימים פתוחה | הערות וסיבת דחייה]`;
 
       if (tasks.length === 0) {
-        return `[תמונת מצב חיה מתוך גיליון משימות_ותגב]\n${headerSchema}\nאין כרגע משימות פתוחות בגיליון.`;
+        return `[תמונת מצב חיה מתוך גיליון משימות_ותגב]\n${headerSchema}\nאין כרגע משימות פתוחות.`;
       }
 
       tasks.sort((a, b) => {
@@ -400,7 +452,7 @@ export class SheetsService {
       return `[תמונת מצב חיה מתוך גיליון משימות_ותגב]\n${headerSchema}\n${fewShotSample}\n\nנמצאו ${tasks.length} משימות פתוחות:\n${formattedLines.join('\n')}`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error('Error fetching live tasks context from Google Sheets:', errMsg);
+      logger.error({ err: error }, 'Error fetching live tasks context from Google Sheets');
       return '[תמונת מצב חיה מתוך גיליון משימות_ותגב]: לא ניתן לשלוק משימות כעת בשל שגיאה.';
     }
   }
@@ -446,8 +498,7 @@ export class SheetsService {
       );
       return `[ארכיון משימות שהושלמו (מתוך ארכיון_משימות)]\n${headerSchema}\n${fewShotSample}\n\nנמצאו ${archived.length} משימות שהושלמו:\n${lines.join('\n')}`;
     } catch (error: unknown) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      console.error('Error fetching archived tasks context from Google Sheets:', errMsg);
+      logger.error({ err: error }, 'Error fetching archived tasks context from Google Sheets');
       return '';
     }
   }
@@ -456,7 +507,7 @@ export class SheetsService {
     try {
       const res = await this.sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
-        range: 'אנשים_ופיתוח!A4:O60',
+        range: 'אנשים_ופיתוח!A4:X60',
       });
 
       const rows = res.data.values || [];
@@ -474,7 +525,7 @@ export class SheetsService {
 
         const name = (row[0] || '').toString().trim();
 
-        if (!name || name === 'שם החייל/קצין' || name.startsWith('ניהול אנשים')) {
+        if (!name || name === 'שם החייל' || name === 'שם החייל/קצין' || name.startsWith('ניהול אנשים')) {
           continue;
         }
 
@@ -482,14 +533,45 @@ export class SheetsService {
         const population = (row[2] || '').toString().trim();
         const rank = (row[3] || '').toString().trim();
         const role = (row[4] || '').toString().trim();
-        const releaseDate = (row[5] || '').toString().trim();
-        const horizonStatus = (row[6] || '').toString().trim();
-        const personalGoal = (row[7] || '').toString().trim();
-        const lastMeetingDate = (row[12] || '').toString().trim();
-        const nextMeetingDate = (row[13] || '').toString().trim();
-        const notes = (row[14] || '').toString().trim();
+        const tash = (row[5] || '').toString().trim();
+        const naat = (row[6] || '').toString().trim();
+        const releaseDate = (row[7] || '').toString().trim();
+        const horizonStatus = (row[8] || '').toString().trim();
+        const personalGoal = (row[9] || '').toString().trim();
+        const subGoal1 = (row[10] || '').toString().trim();
+        const subGoal1Tgb = (row[11] || '').toString().trim();
+        const subGoal2 = (row[12] || '').toString().trim();
+        const subGoal2Tgb = (row[13] || '').toString().trim();
+        const lastMeetingDate = (row[14] || '').toString().trim();
+        const nextMeetingDate = (row[15] || '').toString().trim();
+        const goalProgressStatus = (row[16] || '').toString().trim();
+        const degreeStatus = (row[17] || '').toString().trim();
+        const academicInstitution = (row[18] || '').toString().trim();
+        const degreeExpectedEnd = (row[19] || '').toString().trim();
+        const dmhStatus = (row[20] || '').toString().trim();
+        const excellenceStatus = (row[21] || '').toString().trim();
+        const ceremonyDateOrNotes = (row[22] || '').toString().trim();
+        const notes = (row[23] || '').toString().trim();
 
-        const personLine = `• ${name} | צוות: ${team || 'ללא'} | דרגה: ${rank || 'ללא'} | תפקיד: ${role || 'ללא'} | אוכלוסייה: ${population || 'ללא'}${releaseDate ? ` | תאריך שחרור: ${releaseDate}` : ''}${notes ? ` | הערות: ${notes}` : ''}`;
+        const extraDetails: string[] = [];
+        if (releaseDate) extraDetails.push(`שחרור/סיום: ${releaseDate}`);
+        if (horizonStatus) extraDetails.push(`אופק/שימור: ${horizonStatus}`);
+        if (personalGoal) extraDetails.push(`יעד אישי: ${personalGoal}${goalProgressStatus ? ` (${goalProgressStatus})` : ''}`);
+        if (subGoal1) extraDetails.push(`מטרת משנה 1: ${subGoal1}${subGoal1Tgb ? ` [תג"ב: ${subGoal1Tgb}]` : ''}`);
+        if (subGoal2) extraDetails.push(`מטרת משנה 2: ${subGoal2}${subGoal2Tgb ? ` [תג"ב: ${subGoal2Tgb}]` : ''}`);
+        if (lastMeetingDate) extraDetails.push(`מפגש אחרון: ${lastMeetingDate}`);
+        if (nextMeetingDate) extraDetails.push(`יעד מפגש הבא: ${nextMeetingDate}`);
+        if (tash) extraDetails.push(`ת"ש/מעמד: ${tash}`);
+        if (naat) extraDetails.push(`נע"ת: ${naat}`);
+        if (degreeStatus || academicInstitution) {
+          extraDetails.push(`תואר: ${degreeStatus || ''} ${academicInstitution ? `(${academicInstitution})` : ''}${degreeExpectedEnd ? ` [צפי: ${degreeExpectedEnd}]` : ''}`.trim());
+        }
+        if (dmhStatus) extraDetails.push(`דמ"ח: ${dmhStatus}`);
+        if (excellenceStatus) extraDetails.push(`הצטיינות: ${excellenceStatus}${ceremonyDateOrNotes ? ` (${ceremonyDateOrNotes})` : ''}`);
+        if (notes) extraDetails.push(`הערות: ${notes}`);
+
+        const extraStr = extraDetails.length > 0 ? ` | ${extraDetails.join(' | ')}` : '';
+        const personLine = `• ${name} | צוות: ${team || 'ללא'} | דרגה: ${rank || 'ללא'} | תפקיד: ${role || 'ללא'} | אוכלוסייה: ${population || 'ללא'}${extraStr}`;
         allPeopleLines.push(personLine);
 
         const isRiskRelease = Boolean(
@@ -507,11 +589,24 @@ export class SheetsService {
             population,
             rank,
             role,
+            tash,
+            naat,
             releaseDate,
             horizonStatus,
             personalGoal,
+            subGoal1,
+            subGoal1Tgb,
+            subGoal2,
+            subGoal2Tgb,
             lastMeetingDate,
             nextMeetingDate,
+            goalProgressStatus,
+            degreeStatus,
+            academicInstitution,
+            degreeExpectedEnd,
+            dmhStatus,
+            excellenceStatus,
+            ceremonyDateOrNotes,
             notes,
             isRiskRelease,
             isRiskMeeting,
@@ -519,7 +614,7 @@ export class SheetsService {
         }
       }
 
-      const headerSchema = `[כותרות גיליון אנשים_ופיתוח: שם החייל/קצין | צוות | סוג אוכלוסייה | דרגה | תפקיד | תאריך שחרור/סיום | סטטוס אופק/חפיפה | יעד אישי | תאריך מפגש קודם | תאריך מפגש הבא | הערות]`;
+      const headerSchema = `[כותרות גיליון אנשים_ופיתוח: שם החייל | צוות | סוג אוכלוסייה | דרגה | תפקיד | התאמות ת״ש / מעמד מיוחד | נע"ת | תאריך שחרור/סיום | סטטוס אופק שירות / שימור | יעד אישי | מטרת משנה 1 | תג"ב - מטרת משנה 1 | מטרת משנה 2 | תג"ב - מטרת משנה 2 | תאריך מפגש סטטוס אחרון | תאריך יעד למפגש הבא | סטטוס התקדמות ביעד | סטטוס תואר | מוסד ותחום לימוד | צפי סיום תואר | סטטוס דמ"ח | סטטוס הצטיינות והוקרה | מועד טקס / הערות הצטיינות | הערות]`;
 
       if (allPeopleLines.length === 0) {
         return `[תמונת מצב חיה מתוך גיליון אנשים_ופיתוח]\n${headerSchema}\nלא נמצאו נתוני חיילים/קצינים בגיליון.`;
@@ -540,20 +635,35 @@ export class SheetsService {
 
       return `[רשימת המשרתים המלאה מתוך גיליון אנשים_ופיתוח (${allPeopleLines.length} חיילים/קצינים)]\n${headerSchema}\n${fewShotSample}\n\n${allPeopleLines.join('\n')}${riskSection ? `\n\n${riskSection}` : ''}`.trim();
     } catch (error: unknown) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      console.error('Error fetching people context from Google Sheets:', errMsg);
+      logger.error({ err: error }, 'Error fetching people context from Google Sheets');
       return '[תמונת מצב חיה מתוך גיליון אנשים_ופיתוח]: לא ניתן לשלוק נתוני אנשים כעת בשל שגיאה.';
     }
   }
 
   public async getStaffInterfacesContext(): Promise<string> {
     try {
-      const res = await this.sheets.spreadsheets.values.get({
-        spreadsheetId: config.spreadsheetId,
-        range: 'ממשקי_מטה!A2:F30',
-      });
+      let rows: unknown[][] = [];
+      let usedSheetName = 'אנשי_קשר_מטה';
 
-      const rows = res.data.values || [];
+      try {
+        const res = await this.sheets.spreadsheets.values.get({
+          spreadsheetId: config.spreadsheetId,
+          range: 'אנשי_קשר_מטה!A2:F50',
+        });
+        rows = res.data.values || [];
+      } catch (err) {
+        try {
+          const res = await this.sheets.spreadsheets.values.get({
+            spreadsheetId: config.spreadsheetId,
+            range: 'ממשקי_מטה!A2:F50',
+          });
+          rows = res.data.values || [];
+          usedSheetName = 'ממשקי_מטה';
+        } catch (innerErr) {
+          return '[אנשי קשר מטה, נהלים ו-SOPs]: טרם הוגדרו אנשי קשר מטה בגיליון.';
+        }
+      }
+
       const interfacesLines: string[] = [];
       const items: StaffInterfaceItem[] = [];
 
@@ -581,10 +691,10 @@ export class SheetsService {
         );
       }
 
-      const headerSchema = `[כותרות גיליון ממשקי_מטה: תחום / נושא | גורם מטה / איש קשר | תחומי אחריות וסמכות | נוהל מטה / SOP / תרחיש | תדירות ממשק / ערוץ תקשורת | הערות ודגשים]`;
+      const headerSchema = `[כותרות גיליון ${usedSheetName}: תחום / נושא | גורם מטה / איש קשר | תחומי אחריות וסמכות | נוהל מטה / SOP / תרחיש | תדירות ממשק / ערוץ תקשורת | הערות ודגשים]`;
 
       if (interfacesLines.length === 0) {
-        return `[ממשקי מטה, נהלים ו-SOPs]\n${headerSchema}\nאין כרגע נתונים בגיליון ממשקי_מטה.`;
+        return `[אנשי קשר מטה, נהלים ו-SOPs]\n${headerSchema}\nאין כרגע נתונים בגיליון ${usedSheetName}.`;
       }
 
       const sampleItem = items[0];
@@ -592,11 +702,9 @@ export class SheetsService {
         ? `[דוגמה לרשומה קיימת (Few-Shot Example)]: • [תחום: ${sampleItem.domain}] גורם/איש קשר: ${sampleItem.roleAndContact} | אחריות: ${sampleItem.responsibilities} | SOP/נוהל: ${sampleItem.sop}`
         : '';
 
-      return `[ממשקי מטה, נהלים ו-SOPs]\n${headerSchema}\n${fewShotSample}\n\n${interfacesLines.join('\n')}`;
+      return `[אנשי קשר מטה, נהלים ו-SOPs]\n${headerSchema}\n${fewShotSample}\n\n${interfacesLines.join('\n')}`;
     } catch (error: unknown) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      console.error('Error fetching staff interfaces context from Google Sheets:', errMsg);
-      return '';
+      return '[אנשי קשר מטה, נהלים ו-SOPs]: טרם הוגדרו אנשי קשר מטה בגיליון.';
     }
   }
 
@@ -611,7 +719,7 @@ export class SheetsService {
       const activeInsights: MemoryInsightItem[] = [];
 
       for (const row of rows) {
-        if (!row || row.length < 3) continue;
+        if (!row || row.length < 2) continue;
 
         const id = (row[0] || '').toString().trim();
         const date = (row[1] || '').toString().trim();
@@ -623,25 +731,21 @@ export class SheetsService {
         const status = (row[7] || '').toString().trim();
         const lastReviewDate = (row[8] || '').toString().trim();
 
-        if (!id || id === 'מזהה תובנה') continue;
-
-        if (
-          status.includes('פעיל') ||
-          status.includes('דורש מעקב') ||
-          status.includes('בתהליך שיפור')
-        ) {
-          activeInsights.push({
-            id,
-            date,
-            domain,
-            patternType,
-            patternDescription,
-            impact,
-            mirrorQuestion,
-            status,
-            lastReviewDate,
-          });
+        if (!patternDescription || status === 'בארכיון' || status === 'לא רלוונטי') {
+          continue;
         }
+
+        activeInsights.push({
+          id,
+          date,
+          domain,
+          patternType,
+          patternDescription,
+          impact,
+          mirrorQuestion,
+          status,
+          lastReviewDate,
+        });
       }
 
       const headerSchema = `[כותרות גיליון זיכרון_רמד: מזהה תובנה | תאריך זיהוי | תחום | סוג תבנית/נקודת תורפה | תיאור הדפוס והראיות מהשטח | השפעה על המדור | שאלת מראה | סטטוס | תאריך סקירה אחרונה]`;
@@ -657,8 +761,7 @@ export class SheetsService {
 
       return `[דפוסים אישיים, הרגלים ונקודות תורפה שנלמדו על הרמ"ד (מתוך זיכרון_רמד)]\n${headerSchema}\n${formattedLines.join('\n')}`;
     } catch (error: unknown) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      console.error('Error fetching active memory insights from Google Sheets:', errMsg);
+      logger.error({ err: error }, 'Error fetching active memory insights from Google Sheets');
       return '';
     }
   }
@@ -706,9 +809,9 @@ export class SheetsService {
     }
 
     const now = new Date();
-    const diffTime = Math.max(0, now.getTime() - openDate.getTime());
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays.toString();
+    const diffMs = now.getTime() - openDate.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    return Math.max(0, diffDays).toString();
   }
 
   public async closeTask(taskId: string): Promise<string> {
@@ -717,7 +820,7 @@ export class SheetsService {
 
       const res = await this.sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
-        range: 'משימות_ותגב!A2:N50',
+        range: 'משימות_ותגב!A4:M100',
       });
 
       const rows = res.data.values || [];
@@ -733,55 +836,46 @@ export class SheetsService {
         return `משימה במזהה "${taskId}" לא נמצאה בגיליון משימות_ותגב.`;
       }
 
-      const sheetRow = rowIndex + 2;
-      const originalRow = rows[rowIndex] || [];
+      const targetRow = rows[rowIndex] || [];
+      const sheetRow = rowIndex + 4;
 
-      const openDateStr = (originalRow[10] || '').toString().trim();
-      const calculatedDaysOpen = this.calculateDaysOpen(openDateStr);
+      const openDate = (targetRow[10] || '').toString().trim();
+      const calculatedDays = this.calculateDaysOpen(openDate);
+      const currentNotes = (targetRow[12] || '').toString().trim();
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const updatedNotes = currentNotes
+        ? `${currentNotes}\n[${todayStr}]: הושלם והועבר לארכיון.`
+        : `[${todayStr}]: הושלם והועבר לארכיון.`;
 
-      const now = new Date();
-      const day = String(now.getDate()).padStart(2, '0');
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const year = now.getFullYear();
-      const archiveTimestamp = `${day}/${month}/${year}`;
+      const nowFormatted = new Date().toISOString().replace('T', ' ').slice(0, 16);
 
-      const originalNotes = (
-        originalRow[13] ||
-        (originalRow[12] && originalRow[12] !== 'פתוח' && originalRow[12] !== 'הושלם'
-          ? originalRow[12]
-          : '') ||
-        ''
-      ).toString().trim();
-
-      const archiveRowData: Record<string, any> = {
-        'מזהה משימה': (originalRow[0] || '').toString().trim(),
-        'משימה': (originalRow[1] || '').toString().trim(),
-        'צוות': (originalRow[2] || '').toString().trim(),
-        'אנשי קשר וגורמי חוץ': (originalRow[3] || '').toString().trim(),
-        'תג"ב מקורי': (originalRow[4] || '').toString().trim(),
-        'תג"ב מעודכן': (originalRow[5] || '').toString().trim(),
-        'מונה דחיות': (originalRow[6] || '0').toString().trim(),
-        'עדיפות': (originalRow[7] || '').toString().trim(),
-        'רמת קשב וזמן עבודה': (originalRow[8] || '').toString().trim(),
+      const archiveRowData: Record<string, unknown> = {
+        'מזהה משימה': targetRow[0] || taskId,
+        'משימה': targetRow[1] || '',
+        'צוות': targetRow[2] || '',
+        'אנשי קשר וגורמי חוץ': targetRow[3] || '',
+        'תג"ב מקורי': targetRow[4] || '',
+        'תג"ב מעודכן': targetRow[5] || '',
+        'מונה דחיות': targetRow[6] || '0',
+        'עדיפות': targetRow[7] || '',
+        'רמת קשב וזמן עבודה': targetRow[8] || '',
         'שלב עבודה': 'הושלם',
-        'תאריך פתיחה': openDateStr,
-        'ימים פתוחה': calculatedDaysOpen,
-        'הערות וסיבת דחייה': originalNotes,
-        'תאריך ושעת העברה לארכיון': archiveTimestamp,
+        'תאריך פתיחה': openDate,
+        'ימים פתוחה': calculatedDays,
+        'הערות וסיבת דחייה': updatedNotes,
+        'תאריך ושעת העברה לארכיון': nowFormatted,
       };
 
-      // 1. Append row dynamically via headers
       await this.appendRowByHeaders('ארכיון_משימות', archiveRowData, 1);
 
-      // 2. Delete row from משימות_ותגב
-      const meta = await this.sheets.spreadsheets.get({
+      const sheetMeta = await this.sheets.spreadsheets.get({
         spreadsheetId: config.spreadsheetId,
       });
 
-      const tasksSheet = meta.data.sheets?.find(
+      const sheetObj = sheetMeta.data.sheets?.find(
         (s) => s.properties?.title === 'משימות_ותגב'
       );
-      const tasksSheetId = tasksSheet?.properties?.sheetId ?? 0;
+      const sheetId = sheetObj?.properties?.sheetId || 0;
 
       await this.sheets.spreadsheets.batchUpdate({
         spreadsheetId: config.spreadsheetId,
@@ -790,7 +884,7 @@ export class SheetsService {
             {
               deleteDimension: {
                 range: {
-                  sheetId: tasksSheetId,
+                  sheetId,
                   dimension: 'ROWS',
                   startIndex: sheetRow - 1,
                   endIndex: sheetRow,
@@ -804,7 +898,7 @@ export class SheetsService {
       return `משימה ${taskId} ("${archiveRowData['משימה']}") שלב עבודה עודכן ל"הושלם", הועברה לגיליון ארכיון_משימות ונמחקה מגיליון משימות_ותגב.`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error(`Error closing and archiving task ${taskId}:`, errMsg);
+      logger.error({ err: error, taskId }, `Error closing and archiving task ${taskId}: ${errMsg}`);
       return `שגיאה בסגירת משימה ${taskId}: ${errMsg}`;
     }
   }
@@ -813,7 +907,7 @@ export class SheetsService {
     try {
       const res = await this.sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
-        range: 'משימות_ותגב!A2:N50',
+        range: 'משימות_ותגב!A4:M100',
       });
 
       const rows = res.data.values || [];
@@ -832,19 +926,19 @@ export class SheetsService {
       const targetRow = rows[rowIndex] || [];
       const currentRejections = parseInt((targetRow[6] || '0').toString().trim(), 10) || 0;
       const newRejections = (currentRejections + 1).toString();
-      const currentNotes = (targetRow[13] || '').toString().trim();
+      const currentNotes = (targetRow[12] || '').toString().trim();
       const todayStr = new Date().toISOString().slice(0, 10);
       const newLog = `[${todayStr}]: נדחה ל-${newDate}. נימוק: ${reason}`;
       const updatedNotes = currentNotes ? `${currentNotes}\n${newLog}` : newLog;
 
-      await this.updateCellByHeader('משימות_ותגב', 'מזהה משימה', taskId, 'תג"ב מעודכן', newDate, 1);
-      await this.updateCellByHeader('משימות_ותגב', 'מזהה משימה', taskId, 'מונה דחיות', newRejections, 1);
-      await this.updateCellByHeader('משימות_ותגב', 'מזהה משימה', taskId, 'הערות ותאריך סגירה', updatedNotes, 1);
+      await this.updateCellByHeader('משימות_ותגב', 'מזהה משימה', taskId, 'תג"ב מעודכן', newDate, 3);
+      await this.updateCellByHeader('משימות_ותגב', 'מזהה משימה', taskId, 'מונה דחיות', newRejections, 3);
+      await this.updateCellByHeader('משימות_ותגב', 'מזהה משימה', taskId, 'הערות וסיבת דחייה', updatedNotes, 3);
 
       return `תג"ב משימה ${taskId} עודכן ל-${newDate}. מונה דחיות: ${newRejections}. נימוק: ${reason}.`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error(`Error postponing task ${taskId}:`, errMsg);
+      logger.error({ err: error, taskId }, `Error postponing task ${taskId}: ${errMsg}`);
       return `שגיאה בדחיית משימה ${taskId}: ${errMsg}`;
     }
   }
@@ -870,7 +964,7 @@ export class SheetsService {
         taskId,
         'עדיפות',
         formattedPriority,
-        1
+        3
       );
 
       if (success) {
@@ -879,7 +973,7 @@ export class SheetsService {
       return `משימה במזהה "${taskId}" לא נמצאה בגיליון משימות_ותגב.`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error(`Error updating priority for task ${taskId}:`, errMsg);
+      logger.error({ err: error, taskId }, `Error updating priority for task ${taskId}: ${errMsg}`);
       return `שגיאה בעדכון עדיפות משימה ${taskId}: ${errMsg}`;
     }
   }
@@ -911,7 +1005,7 @@ export class SheetsService {
       const nextId = `INS-${maxId > 0 ? maxId + 1 : rows.length + 1}`;
       const todayStr = new Date().toISOString().slice(0, 10);
 
-      const insightData: Record<string, any> = {
+      const insightData: Record<string, unknown> = {
         'מזהה תובנה': nextId,
         'תאריך זיהוי': todayStr,
         'תחום': insight.domain,
@@ -928,7 +1022,7 @@ export class SheetsService {
       return `תובנת זיכרון חדשה [${nextId}] נשמרה בגיליון זיכרון_רמד: "${insight.description}".`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error('Error saving memory insight:', errMsg);
+      logger.error({ err: error }, 'Error saving memory insight');
       return `שגיאה בשמירת תובנת זיכרון: ${errMsg}`;
     }
   }
@@ -940,7 +1034,17 @@ export class SheetsService {
     sop: string
   ): Promise<string> {
     try {
-      const interfaceData: Record<string, any> = {
+      const defaultHeaders = [
+        'תחום / נושא',
+        'גורם מטה / איש קשר',
+        'תחומי אחריות וסמכות',
+        'נוהל מטה / SOP / תרחיש',
+        'תדירות ממשק / ערוץ תקשורת',
+        'הערות ודגשים',
+      ];
+      await this.ensureSheetExists('אנשי_קשר_מטה', defaultHeaders);
+
+      const interfaceData: Record<string, unknown> = {
         'תחום / נושא': domain,
         'גורם מטה / איש קשר': roleAndContact,
         'תחומי אחריות וסמכות': responsibilities,
@@ -949,26 +1053,26 @@ export class SheetsService {
         'הערות ודגשים': '',
       };
 
-      await this.appendRowByHeaders('ממשקי_מטה', interfaceData, 1);
+      await this.appendRowByHeaders('אנשי_קשר_מטה', interfaceData, 1);
 
-      return `איש מטה / נוהל חדש בתחום "${domain}" מול "${roleAndContact}" התווסף בהצלחה לגיליון ממשקי_מטה.`;
+      return `איש מטה / נוהל חדש בתחום "${domain}" מול "${roleAndContact}" התווסף בהצלחה לגיליון אנשי_קשר_מטה.`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error('Error adding staff interface:', errMsg);
+      logger.error({ err: error }, 'Error adding staff interface');
       return `שגיאה בהוספת איש מטה / נוהל: ${errMsg}`;
     }
   }
 
   public async updatePersonDetails(
     personName: string,
-    updateData: Record<string, any>
+    updateData: Record<string, unknown>
   ): Promise<string> {
     try {
       let updatedCount = 0;
       for (const [header, val] of Object.entries(updateData)) {
         const success = await this.updateCellByHeader(
           'אנשים_ופיתוח',
-          'שם החייל/קצין',
+          'שם החייל',
           personName,
           header,
           val,
@@ -983,7 +1087,7 @@ export class SheetsService {
       return `משרת/ת בשם "${personName}" לא נמצא/ה בגיליון אנשים_ופיתוח.`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error(`Error updating person details for ${personName}:`, errMsg);
+      logger.error({ err: error, personName }, `Error updating person details for ${personName}: ${errMsg}`);
       return `שגיאה בעדכון פרטי משרת: ${errMsg}`;
     }
   }
@@ -1001,7 +1105,7 @@ export class SheetsService {
       const [activeRes, archiveRes] = await Promise.all([
         this.sheets.spreadsheets.values.get({
           spreadsheetId: config.spreadsheetId,
-          range: 'משימות_ותגב!A2:A500',
+          range: 'משימות_ותגב!A4:A500',
         }).catch(() => null),
         this.sheets.spreadsheets.values.get({
           spreadsheetId: config.spreadsheetId,
@@ -1035,7 +1139,7 @@ export class SheetsService {
         formattedPriority = 'P3 - שגרתי';
       }
 
-      const taskRowData: Record<string, any> = {
+      const taskRowData: Record<string, unknown> = {
         'מזהה משימה': nextId,
         'משימה': task.title,
         'צוות': task.team,
@@ -1048,16 +1152,15 @@ export class SheetsService {
         'שלב עבודה': 'טרם החל',
         'תאריך פתיחה': todayDate,
         'ימים פתוחה': '0',
-        'סטטוס': 'פתוח',
-        'הערות ותאריך סגירה': task.notes || '',
+        'הערות וסיבת דחייה': task.notes || '',
       };
 
-      await this.appendRowByHeaders('משימות_ותגב', taskRowData, 1);
+      await this.appendRowByHeaders('משימות_ותגב', taskRowData, 3);
 
       return `משימה חדשה [מזהה ${nextId}] ("${task.title}") נוצרה בהצלחה בגיליון משימות_ותגב עבור צוות ${task.team}, תג"ב ${task.tgb}, עדיפות ${formattedPriority}.`;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error(`Error creating task "${task.title}":`, errMsg);
+      logger.error({ err: error, taskTitle: task.title }, `Error creating task "${task.title}": ${errMsg}`);
       return `שגיאה ביצירת משימה: ${errMsg}`;
     }
   }

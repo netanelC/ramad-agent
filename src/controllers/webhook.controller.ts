@@ -1,10 +1,9 @@
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { config } from '../config/env.js';
 import { agentService } from '../services/agent.service.js';
-import { whatsAppService } from '../services/whatsapp.service.js';
-import type { WhatsAppWebhookPayload } from '../types/whatsapp.js';
-
-const processedMessageIds = new Set<string>();
+import { conversationService } from '../services/conversation.service.js';
+import { logger } from '../common/logger.js';
+import { whatsAppWebhookPayloadSchema } from '../types/whatsapp.js';
 
 export class WebhookController {
   public verifyWebhook(req: Request, res: Response): void {
@@ -13,60 +12,49 @@ export class WebhookController {
     const challenge = req.query['hub.challenge'];
 
     if (mode === 'subscribe' && token === config.verifyToken) {
-      console.log('Webhook verified successfully by Meta');
+      logger.info('Meta WhatsApp webhook verification challenge accepted');
       res.status(200).send(challenge);
     } else {
+      logger.warn({ mode, token }, 'Meta WhatsApp webhook verification failed: Token mismatch');
       res.sendStatus(403);
     }
   }
 
-  public async handleWebhookPayload(req: Request, res: Response): Promise<void> {
-    // 1. שלח מיד 200 ל-Meta לפני כל await או פעולה אסינכרונית!
+  public async handleWebhookPayload(req: Request, res: Response, _next: NextFunction): Promise<void> {
+    // Meta expects an immediate 200 response to acknowledge event receipt
     res.status(200).send('EVENT_RECEIVED');
 
-    const body = req.body as WhatsAppWebhookPayload;
-    if (body.object !== 'whatsapp_business_account') return;
-
-    const entry = body.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const value = changes?.value;
-    const message = value?.messages?.[0];
-
-    if (!message || message.type !== 'text' || !message.text) return;
-
-    const from = message.from;
-    const messageId = message.id;
-    const text = message.text.body.trim();
-
-    if (processedMessageIds.has(messageId)) {
-      console.log(`Duplicate message ignored: ${messageId}`);
+    const parseResult = whatsAppWebhookPayloadSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      logger.debug({ issues: parseResult.error.issues }, 'Ignored webhook payload: did not match WhatsApp schema');
       return;
     }
-    processedMessageIds.add(messageId);
 
-    // ניקוי המזהה אחרי 5 דקות כדי למנוע צמיחה בזיכרון
-    setTimeout(() => processedMessageIds.delete(messageId), 5 * 60 * 1000);
+    const body = parseResult.data;
+    if (body.object !== 'whatsapp_business_account' || !body.entry) return;
 
-    // 1. Immediate reaction emoji ⏳ to signal request is received & processing
-    if (messageId) {
-      await whatsAppService.sendReaction(from, messageId, '⏳');
-    }
+    for (const entry of body.entry) {
+      const changes = entry.changes || [];
+      for (const change of changes) {
+        const messages = change.value.messages || [];
+        for (const message of messages) {
+          if (message.type !== 'text' || !message.text) continue;
 
-    try {
-      await agentService.processIncomingMessage(from, text, messageId);
-    } catch (err: unknown) {
-      const errorDetails = err instanceof Error ? err.message : String(err);
-      console.error('Unhandled error in Webhook Controller:', errorDetails);
+          const from = message.from;
+          const messageId = message.id;
+          const text = message.text.body.trim();
 
-      if (messageId) {
-        await whatsAppService.sendReaction(from, messageId, '❌');
-      }
+          if (conversationService.isDuplicateMessage(messageId)) {
+            logger.info({ messageId }, 'Duplicate message skipped');
+            continue;
+          }
 
-      const errorMessage = `⚠️ נתקלתי בשגיאה בעיבוד הבקשה שלך. הפעולה לא הושלמה. פרטים: ${errorDetails || 'שגיאה לא צפויה'}`;
-      try {
-        await whatsAppService.sendMessage(from || config.allowedPhoneNumber, errorMessage);
-      } catch (sendErr: unknown) {
-        console.error('Failed to send error notification via WhatsApp from controller:', sendErr);
+          try {
+            await agentService.processIncomingMessage(from, text, messageId);
+          } catch (err: unknown) {
+            logger.error({ err, messageId, from }, 'Error initiating agent processing for incoming message');
+          }
+        }
       }
     }
   }
