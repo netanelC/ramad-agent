@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ramad Copilot – לוח בקרה ופיקוד מדורי</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Assistant', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-indigo-900 text-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-3 space-x-reverse">
+                <div class="w-10 h-10 bg-indigo-700 rounded-lg flex items-center justify-center font-bold text-xl">🎖️</div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-wide">סייר הפיקוד המדורי</h1>
+                    <p class="text-xs text-indigo-200">מועילות מול יעילות | 5 צוותים | Ramad Copilot</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2 space-x-reverse">
+                <button onclick="switchTab('soldiers')" id="tabBtn-soldiers" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-indigo-700 text-white transition">👥 חיילים ומפקדים</button>
+                <button onclick="switchTab('tasks')" id="tabBtn-tasks" class="px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-indigo-800 text-indigo-100 transition">📋 תג"בים ומשימות</button>
+                <button onclick="switchTab('chat')" id="tabBtn-chat" class="px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-indigo-800 text-indigo-100 transition">💬 שיחה עם הסוכנים</button>
+                <button onclick="openWhatsAppModal()" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center space-x-1 space-x-reverse">
+                    <span>📱</span>
+                    <span>חיבור WhatsApp</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 py-6 flex-grow w-full">
+
+        <!-- TAB 1: SOLDIERS -->
+        <section id="tab-soldiers" class="space-y-6">
+            <!-- Stats Bar -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                    <p class="text-xs text-slate-500 font-medium">סך הכל פקודים במדור</p>
+                    <p class="text-2xl font-bold text-slate-800 mt-1" id="stat-total-soldiers">0</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                    <p class="text-xs text-slate-500 font-medium">צוותים פעילים</p>
+                    <p class="text-2xl font-bold text-indigo-600 mt-1" id="stat-total-teams">0</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                    <p class="text-xs text-slate-500 font-medium">משתחררים ב-90 יום</p>
+                    <p class="text-2xl font-bold text-amber-600 mt-1" id="stat-upcoming-releases">0</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                    <p class="text-xs text-slate-500 font-medium">ללא שיחת חניכה > חודש</p>
+                    <p class="text-2xl font-bold text-rose-600 mt-1" id="stat-overdue-1on1">0</p>
+                </div>
+            </div>
+
+            <!-- Controls: Add Soldier Button & Search -->
+            <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+                <div class="flex items-center space-x-2 space-x-reverse flex-1">
+                    <input type="text" id="soldierSearch" placeholder="חיפוש לפי שם, צוות, תפקיד או נע&quot;ת..." oninput="filterSoldiers()"
+                           class="w-full sm:w-80 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <select id="teamFilter" onchange="filterSoldiers()" class="px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm">
+                        <option value="">כל הצוותים</option>
+                    </select>
+                </div>
+                <button onclick="openAddSoldierModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-4 py-2.5 rounded-lg shadow-sm flex items-center justify-center space-x-1.5 space-x-reverse transition">
+                    <span>➕</span>
+                    <span>הוספת חייל / מפקד חדש</span>
+                </button>
+            </div>
+
+            <!-- Soldiers Table -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-right text-sm">
+                        <thead class="bg-slate-50 text-slate-600 text-xs font-semibold border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">שם מלא</th>
+                                <th class="p-3">צוות</th>
+                                <th class="p-3">אוכלוסייה ודרגה</th>
+                                <th class="p-3">נע"ת</th>
+                                <th class="p-3">תאריך שחרור</th>
+                                <th class="p-3">סטטוס תואר</th>
+                                <th class="p-3">שיחה אחרונה</th>
+                                <th class="p-3">הערות ות"ש</th>
+                                <th class="p-3 text-center">פעולות</th>
+                            </tr>
+                        </thead>
+                        <tbody id="soldiersTableBody" class="divide-y divide-slate-100">
+                            <tr>
+                                <td colspan="9" class="p-6 text-center text-slate-400">טוען נתונים...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: TASKS -->
+        <section id="tab-tasks" class="hidden space-y-6">
+            <div class="flex justify-between items-center">
+                <h2 class="text-lg font-bold text-slate-800">📋 תג"בים ומשימות אישיות לרמ"ד</h2>
+                <button onclick="openAddTaskModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-4 py-2 rounded-lg transition">
+                    ➕ תג"ב חדש
+                </button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="tasksBoard">
+                <!-- Open Tasks Column -->
+                <div class="bg-slate-100 p-4 rounded-xl">
+                    <h3 class="font-bold text-sm text-slate-700 mb-3 flex items-center justify-between">
+                        <span>⏳ בטיפול</span>
+                        <span id="badge-inprogress-count" class="bg-indigo-100 text-indigo-700 text-xs px-2 py-0.5 rounded-full">0</span>
+                    </h3>
+                    <div id="tasks-inprogress" class="space-y-3"></div>
+                </div>
+                <!-- Due Today / Overdue Column -->
+                <div class="bg-rose-50 border border-rose-100 p-4 rounded-xl">
+                    <h3 class="font-bold text-sm text-rose-700 mb-3 flex items-center justify-between">
+                        <span>⚠️ דורש קשב / באיחור</span>
+                        <span id="badge-urgent-count" class="bg-rose-200 text-rose-800 text-xs px-2 py-0.5 rounded-full">0</span>
+                    </h3>
+                    <div id="tasks-urgent" class="space-y-3"></div>
+                </div>
+                <!-- Completed Column -->
+                <div class="bg-emerald-50 border border-emerald-100 p-4 rounded-xl">
+                    <h3 class="font-bold text-sm text-emerald-700 mb-3 flex items-center justify-between">
+                        <span>✅ הושלם</span>
+                        <span id="badge-completed-count" class="bg-emerald-200 text-emerald-800 text-xs px-2 py-0.5 rounded-full">0</span>
+                    </h3>
+                    <div id="tasks-completed" class="space-y-3"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: CHAT -->
+        <section id="tab-chat" class="hidden max-w-3xl mx-auto h-[600px] flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="bg-slate-100 p-3 border-b border-slate-200 flex items-center justify-between">
+                <span class="text-sm font-bold text-slate-700">🤖 שיחה ישירה עם סייר הפיקוד</span>
+                <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">מחובר</span>
+            </div>
+            <div id="chatMessages" class="flex-grow p-4 overflow-y-auto space-y-3 text-sm">
+                <div class="bg-indigo-50 border border-indigo-100 p-3 rounded-lg max-w-[85%] text-slate-800">
+                    שלום רמ"ד! אני כאן לרשותך – שאל אותי על חיילים, תג"בים, או בקש שאאתגר אותך לפי תפיסת הפיקוד.
+                </div>
+            </div>
+            <div class="p-3 border-t border-slate-200 bg-slate-50 flex items-center space-x-2 space-x-reverse">
+                <input type="text" id="chatInput" placeholder="הקלד הודעה... (למשל: מי משתחרר בקרוב? או אתגר אותי)"
+                       onkeydown="if(event.key === 'Enter') sendChatMessage()"
+                       class="flex-grow px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button onclick="sendChatMessage()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-4 py-2 rounded-lg transition">
+                    שלח
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODAL: ADD SOLDIER (EXACT 12 FIELDS) -->
+    <div id="soldierModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div class="flex justify-between items-center mb-4 border-b pb-3">
+                <h3 class="text-lg font-bold text-slate-800">➕ הוספת חייל / מפקד למדור</h3>
+                <button onclick="closeAddSoldierModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
+            </div>
+            <form id="addSoldierForm" onsubmit="saveSoldier(event)" class="space-y-4 text-sm">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">1. שם מלא *</label>
+                        <input type="text" name="full_name" required placeholder="לדוג' אביהו אהרון" class="w-full p-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">2. צוות *</label>
+                        <input type="text" name="team" required placeholder="לדוג' טטריס" class="w-full p-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">3. סוג אוכלוסייה *</label>
+                        <select name="population" required class="w-full p-2 border rounded-lg">
+                            <option value="סדיר">סדיר (חובה)</option>
+                            <option value="קבע">קבע</option>
+                            <option value="מילואים">מילואים</option>
+                            <option value="יועץ">יועץ</option>
+                            <option value="אע&quot;צ">אע"צ</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">4. דרגה</label>
+                        <input type="text" name="rank" placeholder="לדוג' סגן, סמל, סרן" class="w-full p-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">5. התאמות ת"ש ומעמד מיוחד</label>
+                        <input type="text" name="welfare" placeholder="לדוג' שוכר בנתניה, פטור לילות" class="w-full p-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">6. נע"ת (תפקיד משני)</label>
+                        <input type="text" name="naat_role" placeholder="לדוג' הוואי, ציוד, Buddy קליטה" class="w-full p-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">7. תאריך שחרור</label>
+                        <input type="date" name="release_date" class="w-full p-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">8. תאריך מפגש אחרון (1-על-1)</label>
+                        <input type="date" name="last_1on1_date" class="w-full p-2 border rounded-lg">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">9. סטטוס תואר / השכלה</label>
+                    <input type="text" name="education" placeholder="לדוג' ראשון במכללה למנהל, שנה א', מדעי המחשב" class="w-full p-2 border rounded-lg">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">10. סטטוס הצטיינויות והוקרה</label>
+                    <input type="text" name="awards" placeholder="לדוג' מצטיין יחידה 2025" class="w-full p-2 border rounded-lg">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">11. יעדים אישיים</label>
+                    <textarea name="personal_goals" rows="2" placeholder="יעדי חוזה חניכה ופיתוח אישי לשנה הקרובה" class="w-full p-2 border rounded-lg"></textarea>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">12. הערות רמ"ד</label>
+                    <textarea name="notes" rows="2" placeholder="דגשים פיקודיים, רקע אישי..." class="w-full p-2 border rounded-lg"></textarea>
+                </div>
+
+                <div class="flex justify-end space-x-2 space-x-reverse pt-3 border-t">
+                    <button type="button" onclick="closeAddSoldierModal()" class="px-4 py-2 border rounded-lg hover:bg-slate-100">ביטול</button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg">שמור חייל</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD TASK -->
+    <div id="taskModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4 border-b pb-3">
+                <h3 class="text-lg font-bold text-slate-800">➕ פתיחת תג"ב / משימה אישית</h3>
+                <button onclick="closeAddTaskModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
+            </div>
+            <form id="addTaskForm" onsubmit="saveTask(event)" class="space-y-4 text-sm">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">כותרת המשימה *</label>
+                    <input type="text" name="title" required placeholder="לדוג' שיחת חניכה עם אביהו אהרון" class="w-full p-2 border rounded-lg">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">תאריך יעד (תג"ב) *</label>
+                        <input type="date" name="tagab_date" required class="w-full p-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">צוות קשור</label>
+                        <input type="text" name="team" placeholder="טטריס / כללי" class="w-full p-2 border rounded-lg">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">הערות רמ"ד</label>
+                    <textarea name="ramad_notes" rows="2" class="w-full p-2 border rounded-lg"></textarea>
+                </div>
+                <div class="flex justify-end space-x-2 space-x-reverse pt-3 border-t">
+                    <button type="button" onclick="closeAddTaskModal()" class="px-4 py-2 border rounded-lg hover:bg-slate-100">ביטול</button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg">פתח תג"ב</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Frontend Script -->
+    <script>
+        let soldiersList = [];
+        let tasksList = [];
+
+        function switchTab(tab) {
+            ['soldiers', 'tasks', 'chat'].forEach(t => {
+                document.getElementById('tab-' + t).classList.add('hidden');
+                document.getElementById('tabBtn-' + t).classList.remove('bg-indigo-700');
+                document.getElementById('tabBtn-' + t).classList.add('hover:bg-indigo-800');
+            });
+            document.getElementById('tab-' + tab).classList.remove('hidden');
+            document.getElementById('tabBtn-' + tab).classList.add('bg-indigo-700');
+            document.getElementById('tabBtn-' + tab).classList.remove('hover:bg-indigo-800');
+            if (tab === 'tasks') loadTasks();
+        }
+
+        async function loadSoldiers() {
+            try {
+                const res = await fetch('/api/soldiers/');
+                soldiersList = await res.json();
+                renderSoldiers(soldiersList);
+                updateStats();
+            } catch (err) {
+                console.error("Error loading soldiers:", err);
+            }
+        }
+
+        function renderSoldiers(list) {
+            const tbody = document.getElementById('soldiersTableBody');
+            if (!list.length) {
+                tbody.innerHTML = '<tr><td colspan="9" class="p-6 text-center text-slate-400">טרם נוספו חיילים למערכת. לחץ על כפתור ההוספה למעלה.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = list.map(s => {
+                const isOverdue = s.last_1on1_date ? (new Date() - new Date(s.last_1on1_date)) / (1000*60*60*24) > 30 : true;
+                return `
+                    <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                        <td class="p-3 font-semibold text-slate-900">${s.full_name}</td>
+                        <td class="p-3"><span class="bg-indigo-50 text-indigo-700 text-xs px-2 py-0.5 rounded-md font-medium">${s.team || '-'}</span></td>
+                        <td class="p-3 text-slate-600">${s.rank || ''} (${s.population})</td>
+                        <td class="p-3 text-slate-600">${s.naat_role || '<span class="text-slate-300">אין</span>'}</td>
+                        <td class="p-3 text-slate-600">${s.release_date || '-'}</td>
+                        <td class="p-3 text-slate-600 text-xs max-w-xs truncate" title="${s.education || ''}">${s.education || '-'}</td>
+                        <td class="p-3">
+                            <span class="text-xs px-2 py-0.5 rounded-full ${isOverdue ? 'bg-rose-100 text-rose-700 font-semibold' : 'bg-emerald-100 text-emerald-700'}">
+                                ${s.last_1on1_date || 'טרם תועד'}
+                            </span>
+                        </td>
+                        <td class="p-3 text-xs text-slate-500 max-w-xs truncate" title="${s.notes || ''}">${s.notes || s.welfare || '-'}</td>
+                        <td class="p-3 text-center">
+                            <button onclick="askAboutSoldier('${s.full_name}')" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">התייעץ 💬</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function updateStats() {
+            document.getElementById('stat-total-soldiers').innerText = soldiersList.length;
+            const teams = new Set(soldiersList.map(s => s.team).filter(Boolean));
+            document.getElementById('stat-total-teams').innerText = teams.size;
+
+            // populate team filter
+            const filterEl = document.getElementById('teamFilter');
+            filterEl.innerHTML = '<option value="">כל הצוותים</option>' + 
+                Array.from(teams).map(t => `<option value="${t}">${t}</option>`).join('');
+
+            // Overdue 1on1
+            const overdue = soldiersList.filter(s => !s.last_1on1_date || (new Date() - new Date(s.last_1on1_date)) / (1000*60*60*24) > 30).length;
+            document.getElementById('stat-overdue-1on1').innerText = overdue;
+
+            // Upcoming releases 90 days
+            const in90 = soldiersList.filter(s => {
+                if (!s.release_date) return false;
+                const diff = (new Date(s.release_date) - new Date()) / (1000*60*60*24);
+                return diff >= 0 && diff <= 90;
+            }).length;
+            document.getElementById('stat-upcoming-releases').innerText = in90;
+        }
+
+        function filterSoldiers() {
+            const query = document.getElementById('soldierSearch').value.toLowerCase();
+            const team = document.getElementById('teamFilter').value;
+            const filtered = soldiersList.filter(s => {
+                const matchQ = (s.full_name && s.full_name.toLowerCase().includes(query)) ||
+                               (s.team && s.team.toLowerCase().includes(query)) ||
+                               (s.naat_role && s.naat_role.toLowerCase().includes(query)) ||
+                               (s.education && s.education.toLowerCase().includes(query));
+                const matchTeam = !team || s.team === team;
+                return matchQ && matchTeam;
+            });
+            renderSoldiers(filtered);
+        }
+
+        function openAddSoldierModal() {
+            document.getElementById('soldierModal').classList.remove('hidden');
+        }
+        function closeAddSoldierModal() {
+            document.getElementById('soldierModal').classList.add('hidden');
+        }
+
+        async function saveSoldier(e) {
+            e.preventDefault();
+            const form = new FormData(e.target);
+            const payload = Object.fromEntries(form.entries());
+            if (!payload.release_date) delete payload.release_date;
+            if (!payload.last_1on1_date) delete payload.last_1on1_date;
+
+            const res = await fetch('/api/soldiers/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                closeAddSoldierModal();
+                e.target.reset();
+                loadSoldiers();
+            } else {
+                alert('שגיאה בשמירת החייל');
+            }
+        }
+
+        async function loadTasks() {
+            const res = await fetch('/api/tasks/');
+            tasksList = await res.json();
+            const inprogress = tasksList.filter(t => t.status === 'בטיפול');
+            const completed = tasksList.filter(t => t.status === 'הושלם');
+            const today = new Date().toISOString().split('T')[0];
+            const urgent = inprogress.filter(t => t.tagab_date <= today);
+
+            document.getElementById('badge-inprogress-count').innerText = inprogress.length;
+            document.getElementById('badge-urgent-count').innerText = urgent.length;
+            document.getElementById('badge-completed-count').innerText = completed.length;
+
+            const renderCard = (t) => `
+                <div class="bg-white p-3 rounded-lg shadow-sm border border-slate-200">
+                    <div class="flex justify-between items-start">
+                        <h4 class="font-bold text-slate-800 text-sm">${t.title}</h4>
+                        <span class="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">${t.team || 'כללי'}</span>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-1">תג"ב: ${t.tagab_date}</p>
+                    ${t.ramad_notes ? `<p class="text-xs text-slate-600 mt-1 italic">${t.ramad_notes}</p>` : ''}
+                    ${t.status !== 'הושלם' ? `
+                        <button onclick="markTaskDone(${t.id})" class="mt-2 text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-2 py-1 rounded font-medium">✓ סמן כבוצע</button>
+                    ` : ''}
+                </div>
+            `;
+
+            document.getElementById('tasks-inprogress').innerHTML = inprogress.map(renderCard).join('') || '<p class="text-xs text-slate-400">אין משימות</p>';
+            document.getElementById('tasks-urgent').innerHTML = urgent.map(renderCard).join('') || '<p class="text-xs text-slate-400">אין משימות דחופות</p>';
+            document.getElementById('tasks-completed').innerHTML = completed.map(renderCard).join('') || '<p class="text-xs text-slate-400">אין משימות</p>';
+        }
+
+        async function markTaskDone(id) {
+            await fetch(`/api/tasks/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'הושלם' })
+            });
+            loadTasks();
+        }
+
+        function openAddTaskModal() {
+            document.getElementById('taskModal').classList.remove('hidden');
+        }
+        function closeAddTaskModal() {
+            document.getElementById('taskModal').classList.add('hidden');
+        }
+
+        async function saveTask(e) {
+            e.preventDefault();
+            const form = new FormData(e.target);
+            const payload = Object.fromEntries(form.entries());
+            const res = await fetch('/api/tasks/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                closeAddTaskModal();
+                e.target.reset();
+                loadTasks();
+            }
+        }
+
+        function askAboutSoldier(name) {
+            switchTab('chat');
+            document.getElementById('chatInput').value = `ספר לי על ${name}`;
+            sendChatMessage();
+        }
+
+        async function sendChatMessage() {
+            const input = document.getElementById('chatInput');
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+
+            const chat = document.getElementById('chatMessages');
+            chat.innerHTML += `<div class="bg-indigo-600 text-white p-3 rounded-lg max-w-[85%] mr-auto text-sm">${text}</div>`;
+            chat.scrollTop = chat.scrollHeight;
+
+            try {
+                const res = await fetch('/api/whatsapp/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+                const data = await res.json();
+                chat.innerHTML += `<div class="bg-slate-100 border border-slate-200 text-slate-800 p-3 rounded-lg max-w-[85%] whitespace-pre-wrap text-sm">${data.response}</div>`;
+                chat.scrollTop = chat.scrollHeight;
+            } catch (err) {
+                chat.innerHTML += `<div class="bg-rose-50 text-rose-600 p-2 rounded text-xs">שגיאה בתקשורת עם השרת</div>`;
+            }
+        }
+
+        // Initialize on page load
+        loadSoldiers();
+    </script>
+</body>
+</html>
