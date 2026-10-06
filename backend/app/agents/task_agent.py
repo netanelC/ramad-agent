@@ -74,4 +74,9 @@ def run_task_agent(user_query: str, context: dict = None) -> dict:
         HumanMessage(content=prompt)
     ]
     response = llm.invoke(messages)
-    return {"response": response.content, "context": {"due_data": due_data, "created": created_task_info}}
+    content = response.content
+    if isinstance(content, list):
+        text = "\n".join([c.get("text", str(c)) if isinstance(c, dict) else str(c) for c in content])
+    else:
+        text = str(content)
+    return {"response": text, "context": {"due_data": due_data, "created": created_task_info}}

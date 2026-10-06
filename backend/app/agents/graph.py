@@ -32,9 +32,25 @@ def doctrine_node(state: AgentState) -> dict:
         "context_data": res.get("context", {})
     }
 
+def _to_str(val) -> str:
+    if isinstance(val, str):
+        return val
+    if isinstance(val, list):
+        parts = []
+        for item in val:
+            if isinstance(item, dict) and "text" in item:
+                parts.append(item["text"])
+            else:
+                parts.append(str(item))
+        return "\n".join(parts)
+    if isinstance(val, dict) and "text" in val:
+        return str(val["text"])
+    return str(val) if val is not None else ""
+
 def synthesizer_node(state: AgentState) -> dict:
-    scratchpad = state.get("agent_scratchpad", [])
-    final_text = "\n\n".join(scratchpad) if scratchpad else "לא התקבל מענה מהסוכנים."
+    scratchpad = state.get("agent_scratchpad", []) or []
+    string_parts = [_to_str(s) for s in scratchpad if s]
+    final_text = "\n\n".join(string_parts) if string_parts else "לא התקבל מענה מהסוכנים."
     return {
         "final_response": final_text,
         "messages": [AIMessage(content=final_text)]

@@ -50,10 +50,15 @@ def classify_intent(query: str) -> str:
             google_api_key=settings.gemini_api_key,
             temperature=0.0
         )
-        res = llm.invoke([
+        raw_res = llm.invoke([
             SystemMessage(content=SUPERVISOR_ROUTER_PROMPT),
             HumanMessage(content=query)
-        ]).content.strip().lower()
+        ]).content
+        if isinstance(raw_res, list) and raw_res:
+            res = raw_res[0].get("text", "") if isinstance(raw_res[0], dict) else str(raw_res[0])
+        else:
+            res = str(raw_res)
+        res = res.strip().lower()
         if res in ["people", "task", "doctrine", "mixed"]:
             return res
         return "mixed"

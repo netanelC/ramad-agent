@@ -1,4 +1,15 @@
-node_modules/
-dist/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 .env
 credentials.json
+*.db
+*.sqlite3
+.DS_Store
+dist/
+build/
+node_modules/
+.next/
+.pytest_cache/

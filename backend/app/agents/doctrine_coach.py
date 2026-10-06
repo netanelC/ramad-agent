@@ -66,4 +66,9 @@ def run_doctrine_coach(user_query: str, context: dict = None) -> dict:
         HumanMessage(content=prompt)
     ]
     response = llm.invoke(messages)
-    return {"response": response.content, "context": {"is_sparring": is_sparring}}
+    content = response.content
+    if isinstance(content, list):
+        text = "\n".join([c.get("text", str(c)) if isinstance(c, dict) else str(c) for c in content])
+    else:
+        text = str(content)
+    return {"response": text, "context": {"is_sparring": is_sparring}}
